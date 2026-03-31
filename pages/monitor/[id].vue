@@ -1,4 +1,15 @@
 <script setup lang="ts">
+import {
+  AlertCircle,
+  ArrowLeft,
+  CheckCircle2,
+  Clock,
+  Pause,
+  Pencil,
+  Play,
+  Trash2,
+  XCircle,
+} from 'lucide-vue-next'
 import { useMonitorsStore } from '~/stores/monitors'
 import type { Monitor, Heartbeat } from '~/stores/monitors'
 import { formatResponseTime, formatUptime } from '~/composables/useMonitorStats'
@@ -8,30 +19,17 @@ definePageMeta({ layout: 'default' })
 const route = useRoute()
 const router = useRouter()
 const store = useMonitorsStore()
-
 const monitorId = computed(() => parseInt(route.params.id as string, 10))
 
 interface MonitorDetail extends Monitor {
-  incidents: Array<{
-    id: number
-    from: string
-    to: string
-    at: string
-    message: string
-  }>
+  incidents: Array<{ id: number; from: string; to: string; at: string; message: string }>
 }
-
 interface HeartbeatStats {
   heartbeats: Heartbeat[]
   stats: {
-    total: number
-    upCount: number
-    downCount: number
-    uptimePercent: number | null
-    avgResponseTime: number | null
-    minResponseTime: number | null
-    maxResponseTime: number | null
-    period: string
+    total: number; upCount: number; downCount: number
+    uptimePercent: number | null; avgResponseTime: number | null
+    minResponseTime: number | null; maxResponseTime: number | null; period: string
   }
 }
 
@@ -40,358 +38,324 @@ const heartbeatData = ref<HeartbeatStats | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
 const selectedPeriod = ref<'24h' | '7d' | '30d'>('24h')
-const showEditModal = ref(false)
+const showEditForm = ref(false)
 const showDeleteConfirm = ref(false)
+const displayLimit = ref(10)
+const DISPLAY_LIMIT_OPTIONS = [10, 20, 50, 100] as const
 
-async function fetchMonitorDetail() {
-  try {
-    const data = await $fetch<MonitorDetail>(`/api/monitors/${monitorId.value}`)
-    monitor.value = data
-  } catch (err: any) {
-    error.value = err.message || 'Failed to load monitor'
-  }
+async function fetchDetail() {
+  try { monitor.value = await $fetch<MonitorDetail>(`/api/monitors/${monitorId.value}`) }
+  catch (e: any) { error.value = e.message || 'Failed to load monitor' }
 }
-
 async function fetchHeartbeats() {
   try {
-    const data = await $fetch<HeartbeatStats>(`/api/monitors/${monitorId.value}/heartbeats`, {
-      query: { period: selectedPeriod.value, limit: 200 }
+    heartbeatData.value = await $fetch<HeartbeatStats>(`/api/monitors/${monitorId.value}/heartbeats`, {
+      query: { period: selectedPeriod.value, limit: 200 },
     })
-    heartbeatData.value = data
-  } catch (err: any) {
-    console.error('Failed to load heartbeats:', err)
-  }
+  } catch {}
 }
-
 async function loadAll() {
   loading.value = true
   error.value = null
-  await Promise.all([fetchMonitorDetail(), fetchHeartbeats()])
+  await Promise.all([fetchDetail(), fetchHeartbeats()])
   loading.value = false
 }
 
 watch(selectedPeriod, fetchHeartbeats)
-
 onMounted(loadAll)
-
-// Auto-refresh every 30s
 const { pause } = useIntervalFn(loadAll, 30000)
 onUnmounted(pause)
 
 async function handleToggle() {
   if (!monitor.value) return
-  try {
-    const updated = await store.toggleMonitor(monitor.value.id)
-    monitor.value = { ...monitor.value, ...updated }
-  } catch (err) {
-    console.error('Toggle failed:', err)
-  }
+  const updated = await store.toggleMonitor(monitor.value.id)
+  monitor.value = { ...monitor.value, ...updated }
 }
-
 async function confirmDelete() {
   if (!monitor.value) return
-  try {
-    await store.deleteMonitor(monitor.value.id)
-    router.push('/')
-  } catch (err) {
-    console.error('Delete failed:', err)
-  }
+  await store.deleteMonitor(monitor.value.id)
+  router.push('/')
 }
 
 const currentStatus = computed(() => monitor.value?.latestHeartbeat?.status ?? 'pending')
+const formatDate = (ts?: string | null) => ts ? new Date(ts).toLocaleString() : 'N/A'
 
-function formatDate(ts: string | null | undefined): string {
-  if (!ts) return 'N/A'
-  return new Date(ts).toLocaleString()
+const uptimeColor = (val: number | null) => {
+  if (!val) return 'text-muted-foreground'
+  return val >= 99 ? 'text-green-400' : val >= 95 ? 'text-yellow-400' : 'text-red-400'
 }
 </script>
 
 <template>
-  <div class="p-6 space-y-6">
-    <!-- Back button -->
-    <div>
-      <NuxtLink
-        to="/"
-        class="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-        </svg>
-        Back to Dashboard
-      </NuxtLink>
+  <div class="p-6 space-y-5 max-w-5xl mx-auto">
+
+    <!-- Back -->
+    <NuxtLink
+      to="/"
+      class="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+    >
+      <ArrowLeft class="size-4" />
+      Dashboard
+    </NuxtLink>
+
+    <!-- Loading -->
+    <div v-if="loading" class="space-y-4">
+      <div class="flex items-center gap-3">
+        <Skeleton class="size-10 rounded-full" />
+        <div class="space-y-2">
+          <Skeleton class="h-5 w-48" />
+          <Skeleton class="h-3 w-32" />
+        </div>
+      </div>
+      <div class="grid grid-cols-6 gap-3">
+        <Skeleton v-for="i in 6" :key="i" class="h-16 rounded-lg" />
+      </div>
+      <Skeleton class="h-40 rounded-lg" />
     </div>
 
-    <!-- Loading state -->
-    <div v-if="loading" class="space-y-4 animate-pulse">
-      <div class="h-8 bg-card rounded w-1/3" />
-      <div class="h-4 bg-card rounded w-1/2" />
-      <div class="h-32 bg-card rounded" />
-    </div>
-
-    <!-- Error state -->
-    <div v-else-if="error" class="bg-destructive/10 border border-destructive/30 rounded-lg p-4 text-destructive">
-      {{ error }}
+    <!-- Error -->
+    <div v-else-if="error" class="flex items-center gap-2 rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">
+      <AlertCircle class="size-4 shrink-0" />{{ error }}
     </div>
 
     <template v-else-if="monitor">
-      <!-- Monitor Header -->
-      <div class="flex items-start justify-between gap-4">
-        <div class="flex items-start gap-4">
-          <div class="pt-1">
+      <!-- Monitor header -->
+      <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+        <div class="flex items-start gap-3">
+          <div class="pt-0.5">
             <StatusBadge :status="currentStatus" size="lg" />
           </div>
           <div>
-            <div class="flex items-center gap-2">
-              <h1 class="text-2xl font-bold text-foreground">{{ monitor.name }}</h1>
+            <div class="flex items-center gap-2 flex-wrap">
+              <h1 class="text-xl font-bold text-foreground">{{ monitor.name }}</h1>
               <Badge
-                :class="monitor.type === 'http' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : 'bg-purple-500/20 text-purple-400 border-purple-500/30'"
                 variant="outline"
-                class="font-mono uppercase text-xs"
-              >
-                {{ monitor.type }}
-              </Badge>
-              <Badge v-if="!monitor.enabled" variant="secondary">Paused</Badge>
+                :class="monitor.type === 'http'
+                  ? 'bg-blue-500/10 text-blue-400 border-blue-500/20 text-[10px] font-mono uppercase'
+                  : 'bg-violet-500/10 text-violet-400 border-violet-500/20 text-[10px] font-mono uppercase'"
+              >{{ monitor.type }}</Badge>
+              <Badge v-if="!monitor.enabled" variant="secondary" class="text-[10px]">Paused</Badge>
             </div>
             <a
-              :href="monitor.type === 'http' ? monitor.url : '#'"
-              :target="monitor.type === 'http' ? '_blank' : undefined"
-              :rel="monitor.type === 'http' ? 'noopener noreferrer' : undefined"
-              class="text-sm text-muted-foreground hover:text-primary transition-colors font-mono mt-0.5 block"
+              v-if="monitor.type === 'http'"
+              :href="monitor.url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-xs text-muted-foreground hover:text-primary transition-colors font-mono mt-0.5 block"
             >{{ monitor.url }}</a>
+            <span v-else class="text-xs text-muted-foreground font-mono mt-0.5 block">{{ monitor.url }}</span>
           </div>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 shrink-0">
           <Button
-            :variant="monitor.enabled ? 'outline' : 'outline'"
-            :class="monitor.enabled ? 'border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10' : 'border-green-500/30 text-green-400 hover:bg-green-500/10'"
+            variant="outline"
+            size="sm"
             class="gap-1.5"
+            :class="monitor.enabled
+              ? 'border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10'
+              : 'border-green-500/30 text-green-400 hover:bg-green-500/10'"
             @click="handleToggle"
           >
-            <svg v-if="monitor.enabled" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <svg v-else class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+            <Pause v-if="monitor.enabled" class="size-3.5" />
+            <Play v-else class="size-3.5" />
             {{ monitor.enabled ? 'Pause' : 'Resume' }}
           </Button>
-          <Button variant="outline" class="gap-1.5" @click="showEditModal = true">
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-            Edit
+          <Button variant="outline" size="sm" class="gap-1.5" @click="showEditForm = true">
+            <Pencil class="size-3.5" />Edit
           </Button>
           <Button
             variant="outline"
+            size="sm"
             class="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10"
             @click="showDeleteConfirm = true"
           >
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-            Delete
+            <Trash2 class="size-3.5" />Delete
           </Button>
         </div>
       </div>
 
-      <!-- Stats Row -->
+      <!-- Stats row -->
       <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <Card class="p-3">
-          <div class="text-xs text-muted-foreground mb-1">Response Time</div>
-          <div class="text-lg font-bold text-foreground">
-            {{ formatResponseTime(monitor.latestHeartbeat?.responseTimeMs) }}
-          </div>
+          <p class="text-[11px] text-muted-foreground">Response</p>
+          <p class="text-lg font-bold text-foreground mt-0.5">{{ formatResponseTime(monitor.latestHeartbeat?.responseTimeMs) }}</p>
         </Card>
         <Card class="p-3">
-          <div class="text-xs text-muted-foreground mb-1">Uptime 24h</div>
-          <div
-            class="text-lg font-bold"
-            :class="monitor.uptime24h !== null ? (monitor.uptime24h >= 99 ? 'text-green-400' : monitor.uptime24h >= 95 ? 'text-yellow-400' : 'text-red-400') : 'text-muted-foreground'"
-          >{{ formatUptime(monitor.uptime24h) }}</div>
+          <p class="text-[11px] text-muted-foreground">Uptime 24h</p>
+          <p :class="['text-lg font-bold mt-0.5', uptimeColor(monitor.uptime24h)]">{{ formatUptime(monitor.uptime24h) }}</p>
         </Card>
         <Card class="p-3">
-          <div class="text-xs text-muted-foreground mb-1">Uptime 7d</div>
-          <div
-            class="text-lg font-bold"
-            :class="monitor.uptime7d !== null ? (monitor.uptime7d >= 99 ? 'text-green-400' : monitor.uptime7d >= 95 ? 'text-yellow-400' : 'text-red-400') : 'text-muted-foreground'"
-          >{{ formatUptime(monitor.uptime7d) }}</div>
+          <p class="text-[11px] text-muted-foreground">Uptime 7d</p>
+          <p :class="['text-lg font-bold mt-0.5', uptimeColor(monitor.uptime7d)]">{{ formatUptime(monitor.uptime7d) }}</p>
         </Card>
         <Card class="p-3">
-          <div class="text-xs text-muted-foreground mb-1">Uptime 30d</div>
-          <div
-            class="text-lg font-bold"
-            :class="monitor.uptime30d !== null ? (monitor.uptime30d >= 99 ? 'text-green-400' : monitor.uptime30d >= 95 ? 'text-yellow-400' : 'text-red-400') : 'text-muted-foreground'"
-          >{{ formatUptime(monitor.uptime30d) }}</div>
+          <p class="text-[11px] text-muted-foreground">Uptime 30d</p>
+          <p :class="['text-lg font-bold mt-0.5', uptimeColor(monitor.uptime30d)]">{{ formatUptime(monitor.uptime30d) }}</p>
         </Card>
         <Card class="p-3">
-          <div class="text-xs text-muted-foreground mb-1">Check Interval</div>
-          <div class="text-lg font-bold text-foreground">{{ monitor.intervalSeconds }}s</div>
+          <p class="text-[11px] text-muted-foreground">Interval</p>
+          <p class="text-lg font-bold text-foreground mt-0.5 flex items-center gap-1">
+            <Clock class="size-3.5 text-muted-foreground" />{{ monitor.intervalSeconds }}s
+          </p>
         </Card>
         <Card class="p-3">
-          <div class="text-xs text-muted-foreground mb-1">Last Check</div>
-          <div class="text-sm font-medium text-foreground">
-            {{ monitor.latestHeartbeat?.checkedAt
-              ? new Date(monitor.latestHeartbeat.checkedAt).toLocaleTimeString()
-              : 'Never' }}
-          </div>
+          <p class="text-[11px] text-muted-foreground">Last Check</p>
+          <p class="text-sm font-medium text-foreground mt-0.5">
+            {{ monitor.latestHeartbeat?.checkedAt ? new Date(monitor.latestHeartbeat.checkedAt).toLocaleTimeString() : 'Never' }}
+          </p>
         </Card>
       </div>
 
-      <!-- Heartbeat Status Bar -->
+      <!-- Status bar -->
       <Card class="p-4">
-        <h2 class="text-sm font-semibold text-foreground mb-3">Recent Status (last 90 checks)</h2>
+        <h2 class="text-sm font-semibold text-foreground mb-3">Last 90 Checks</h2>
         <UptimeBar :heartbeats="monitor.recentHeartbeats" :blocks="90" />
       </Card>
 
-      <!-- Response Time Chart -->
+      <!-- Response time chart -->
       <Card class="p-4">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-sm font-semibold text-foreground">Response Time</h2>
           <div class="flex gap-1">
             <Button
-              v-for="period in ['24h', '7d', '30d']"
-              :key="period"
-              :variant="selectedPeriod === period ? 'default' : 'ghost'"
+              v-for="p in ['24h', '7d', '30d']"
+              :key="p"
+              :variant="selectedPeriod === p ? 'default' : 'ghost'"
               size="sm"
-              class="px-2.5 py-1 h-auto text-xs"
-              @click="selectedPeriod = period as any"
-            >{{ period }}</Button>
+              class="h-7 px-2.5 text-xs"
+              @click="selectedPeriod = p as any"
+            >{{ p }}</Button>
           </div>
         </div>
 
-        <div v-if="heartbeatData" class="space-y-4">
-          <div class="grid grid-cols-3 gap-3 text-center">
-            <div>
-              <div class="text-xs text-muted-foreground">Avg</div>
-              <div class="text-sm font-semibold text-foreground">
-                {{ formatResponseTime(heartbeatData.stats.avgResponseTime) }}
-              </div>
+        <template v-if="heartbeatData">
+          <div class="grid grid-cols-3 gap-3 text-center mb-4">
+            <div class="rounded-lg bg-muted/30 py-2.5">
+              <p class="text-[10px] text-muted-foreground uppercase tracking-wide">Avg</p>
+              <p class="text-sm font-semibold text-foreground mt-0.5">{{ formatResponseTime(heartbeatData.stats.avgResponseTime) }}</p>
             </div>
-            <div>
-              <div class="text-xs text-muted-foreground">Min</div>
-              <div class="text-sm font-semibold text-green-400">
-                {{ formatResponseTime(heartbeatData.stats.minResponseTime) }}
-              </div>
+            <div class="rounded-lg bg-green-500/5 py-2.5">
+              <p class="text-[10px] text-muted-foreground uppercase tracking-wide">Min</p>
+              <p class="text-sm font-semibold text-green-400 mt-0.5">{{ formatResponseTime(heartbeatData.stats.minResponseTime) }}</p>
             </div>
-            <div>
-              <div class="text-xs text-muted-foreground">Max</div>
-              <div class="text-sm font-semibold text-red-400">
-                {{ formatResponseTime(heartbeatData.stats.maxResponseTime) }}
-              </div>
+            <div class="rounded-lg bg-red-500/5 py-2.5">
+              <p class="text-[10px] text-muted-foreground uppercase tracking-wide">Max</p>
+              <p class="text-sm font-semibold text-red-400 mt-0.5">{{ formatResponseTime(heartbeatData.stats.maxResponseTime) }}</p>
             </div>
           </div>
           <ResponseTimeChart :heartbeats="heartbeatData.heartbeats" :height="150" />
-        </div>
-        <div v-else class="h-32 flex items-center justify-center text-muted-foreground text-sm">
-          Loading chart...
+        </template>
+        <div v-else class="h-32 flex items-center justify-center text-sm text-muted-foreground">
+          Loading…
         </div>
       </Card>
 
-      <!-- Incident Log -->
+      <!-- Incident log -->
       <Card class="p-4">
         <h2 class="text-sm font-semibold text-foreground mb-3">
           Incident Log
-          <span class="text-muted-foreground font-normal ml-1">(last 20 status changes)</span>
+          <span class="text-muted-foreground font-normal text-xs ml-1">(last 20 status changes)</span>
         </h2>
-        <div v-if="monitor.incidents && monitor.incidents.length > 0" class="space-y-2">
+        <div v-if="monitor.incidents?.length" class="divide-y divide-border/50">
           <div
             v-for="incident in monitor.incidents"
             :key="incident.id"
-            class="flex items-start gap-3 py-2 border-b border-border/50 last:border-0"
+            class="flex items-start gap-3 py-2.5"
           >
-            <div
-              class="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
-              :class="incident.to === 'down' ? 'bg-red-500' : 'bg-green-500'"
-            />
+            <div :class="['mt-1.5 size-2 rounded-full shrink-0', incident.to === 'down' ? 'bg-red-500' : 'bg-green-500']" />
             <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2">
-                <span
-                  :class="incident.to === 'down' ? 'text-red-400' : 'text-green-400'"
-                  class="text-sm font-medium capitalize"
-                >{{ incident.to === 'down' ? 'Service went down' : 'Service recovered' }}</span>
+              <div class="flex items-center gap-2 flex-wrap">
+                <span :class="['text-sm font-medium', incident.to === 'down' ? 'text-red-400' : 'text-green-400']">
+                  {{ incident.to === 'down' ? 'Went down' : 'Recovered' }}
+                </span>
                 <span class="text-xs text-muted-foreground">{{ formatDate(incident.at) }}</span>
               </div>
-              <p v-if="incident.message" class="text-xs text-muted-foreground mt-0.5 truncate">
-                {{ incident.message }}
-              </p>
+              <p v-if="incident.message" class="text-xs text-muted-foreground mt-0.5 truncate">{{ incident.message }}</p>
             </div>
           </div>
         </div>
-        <div v-else class="text-sm text-muted-foreground py-4 text-center">
-          No incidents recorded yet
-        </div>
+        <p v-else class="text-sm text-muted-foreground py-3 text-center">No incidents recorded</p>
       </Card>
 
-      <!-- Recent Heartbeats Table -->
+      <!-- Recent checks table -->
       <Card class="overflow-hidden">
-        <div class="flex items-center justify-between p-4 border-b border-border">
-          <h2 class="text-sm font-semibold text-foreground">Recent Checks</h2>
-          <span v-if="heartbeatData" class="text-xs text-muted-foreground">
-            {{ heartbeatData.stats.upCount }} up, {{ heartbeatData.stats.downCount }} down in {{ selectedPeriod }}
-          </span>
+        <div class="flex items-center justify-between px-4 py-3 border-b border-border gap-4">
+          <div class="flex items-center gap-3">
+            <h2 class="text-sm font-semibold text-foreground">Recent Checks</h2>
+            <span v-if="heartbeatData" class="text-xs text-muted-foreground">
+              {{ heartbeatData.stats.upCount }} up · {{ heartbeatData.stats.downCount }} down
+              <span class="text-muted-foreground/60 ml-1">in {{ selectedPeriod }}</span>
+            </span>
+          </div>
+          <!-- Display limit selector -->
+          <div class="flex items-center gap-1.5 shrink-0">
+            <span class="text-xs text-muted-foreground hidden sm:inline">Show</span>
+            <div class="flex gap-1">
+              <button
+                v-for="n in DISPLAY_LIMIT_OPTIONS"
+                :key="n"
+                :class="[
+                  'px-2 py-0.5 rounded text-xs font-medium transition-colors',
+                  displayLimit === n
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent',
+                ]"
+                @click="displayLimit = n"
+              >{{ n }}</button>
+            </div>
+          </div>
         </div>
-        <div v-if="heartbeatData && heartbeatData.heartbeats.length > 0" class="overflow-x-auto">
-          <table class="w-full text-sm">
+        <div v-if="heartbeatData?.heartbeats.length" class="overflow-x-auto">
+          <table class="w-full text-xs">
             <thead>
-              <tr class="border-b border-border">
-                <th class="text-left text-muted-foreground font-medium px-4 py-2">Status</th>
-                <th class="text-left text-muted-foreground font-medium px-4 py-2">Response Time</th>
-                <th class="text-left text-muted-foreground font-medium px-4 py-2">Checked At</th>
-                <th class="text-left text-muted-foreground font-medium px-4 py-2">Message</th>
+              <tr class="border-b border-border bg-muted/20">
+                <th class="text-left font-medium text-muted-foreground px-4 py-2.5">Status</th>
+                <th class="text-left font-medium text-muted-foreground px-4 py-2.5">Response</th>
+                <th class="text-left font-medium text-muted-foreground px-4 py-2.5">Checked At</th>
+                <th class="text-left font-medium text-muted-foreground px-4 py-2.5">Message</th>
               </tr>
             </thead>
             <tbody>
               <tr
-                v-for="hb in [...heartbeatData.heartbeats].reverse().slice(0, 50)"
+                v-for="hb in [...heartbeatData.heartbeats].reverse().slice(0, displayLimit)"
                 :key="hb.id"
-                class="border-b border-border/30 hover:bg-accent/30 transition-colors"
+                class="border-b border-border/30 hover:bg-accent/20 transition-colors"
               >
-                <td class="px-4 py-2">
+                <td class="px-4 py-2.5">
                   <StatusBadge :status="hb.status" size="sm" />
                 </td>
-                <td class="px-4 py-2 text-foreground">
-                  {{ formatResponseTime(hb.responseTimeMs) }}
-                </td>
-                <td class="px-4 py-2 text-muted-foreground">
-                  {{ formatDate(hb.checkedAt) }}
-                </td>
-                <td class="px-4 py-2 text-muted-foreground text-xs truncate max-w-xs">
-                  {{ hb.message || '-' }}
-                </td>
+                <td class="px-4 py-2.5 text-foreground tabular-nums">{{ formatResponseTime(hb.responseTimeMs) }}</td>
+                <td class="px-4 py-2.5 text-muted-foreground">{{ formatDate(hb.checkedAt) }}</td>
+                <td class="px-4 py-2.5 text-muted-foreground/70 truncate max-w-xs">{{ hb.message || '—' }}</td>
               </tr>
             </tbody>
           </table>
         </div>
-        <div v-else class="p-8 text-center text-muted-foreground text-sm">
-          No checks recorded in this time period
-        </div>
+        <p v-else class="px-4 py-8 text-center text-sm text-muted-foreground">No checks in this period</p>
       </Card>
     </template>
 
-    <!-- Edit Modal -->
-    <EditMonitorModal
-      v-if="showEditModal && monitor"
+    <!-- Edit modal -->
+    <MonitorFormModal
+      :open="showEditForm"
       :monitor="monitor"
-      @close="showEditModal = false"
-      @updated="loadAll"
+      @update:open="showEditForm = $event"
+      @saved="loadAll"
     />
 
-    <!-- Delete Confirmation Dialog -->
+    <!-- Delete confirm -->
     <Dialog :open="showDeleteConfirm" @update:open="showDeleteConfirm = $event">
       <template #title>
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-full bg-destructive/20 flex items-center justify-center flex-shrink-0">
-            <svg class="w-5 h-5 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
+          <div class="flex size-9 items-center justify-center rounded-full bg-destructive/15 shrink-0">
+            <AlertCircle class="size-4 text-destructive" />
           </div>
-          <span>Delete Monitor</span>
+          <span>Delete "{{ monitor?.name }}"?</span>
         </div>
       </template>
-      <p class="text-sm text-foreground mb-5">
-        Are you sure you want to delete "{{ monitor?.name }}"? All heartbeat history will be permanently removed.
+      <p class="text-sm text-muted-foreground mb-5">
+        All heartbeat history will be permanently removed. This cannot be undone.
       </p>
       <div class="flex gap-3">
         <Button variant="outline" class="flex-1" @click="showDeleteConfirm = false">Cancel</Button>

@@ -5,6 +5,16 @@
 @layer base {
   :root {
     --background: 222 47% 11%;
+    --sidebar-background: 222 47% 9%;
+    --sidebar-foreground: 213 31% 91%;
+    --sidebar-primary: 210 40% 60%;
+    --sidebar-primary-foreground: 222 47% 9%;
+    --sidebar-accent: 216 34% 18%;
+    --sidebar-accent-foreground: 213 31% 91%;
+    --sidebar-border: 216 34% 18%;
+    --sidebar-ring: 210 40% 60%;
+    --sidebar-width: 16rem;
+    --sidebar-width-icon: 3.5rem;
     --foreground: 213 31% 91%;
     --card: 222 47% 13%;
     --card-foreground: 213 31% 91%;

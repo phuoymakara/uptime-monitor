@@ -29,16 +29,16 @@ async function checkMonitor(monitorId: number) {
       message: result.message
     }).run()
 
-    // Keep only last 1000 heartbeats per monitor to prevent unbounded growth
+    // Keep only last 100 heartbeats per monitor to prevent unbounded growth
     const countResult = db.select().from(heartbeats)
       .where(eq(heartbeats.monitorId, monitorId))
       .all()
 
-    if (countResult.length > 1000) {
+    if (countResult.length > 100) {
       const sorted = countResult.sort((a, b) =>
         (a.checkedAt?.getTime() ?? 0) - (b.checkedAt?.getTime() ?? 0)
       )
-      const toDelete = sorted.slice(0, sorted.length - 1000)
+      const toDelete = sorted.slice(0, sorted.length - 100)
       for (const hb of toDelete) {
         db.delete(heartbeats).where(eq(heartbeats.id, hb.id)).run()
       }

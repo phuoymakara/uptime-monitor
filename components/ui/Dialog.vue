@@ -8,6 +8,7 @@ import {
   DialogRoot,
   DialogTitle,
 } from 'radix-vue'
+import { X } from 'lucide-vue-next'
 import { cn } from '~/lib/utils'
 
 interface Props {
@@ -44,10 +45,8 @@ const emit = defineEmits<{
             </DialogDescription>
             <slot name="description" />
           </div>
-          <DialogClose class="text-muted-foreground hover:text-foreground transition-colors rounded-sm focus:outline-none focus:ring-2 focus:ring-ring">
-            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+          <DialogClose class="flex items-center justify-center rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors focus:outline-none focus:ring-2 focus:ring-ring">
+            <X class="size-4" />
           </DialogClose>
         </div>
         <div class="p-5">

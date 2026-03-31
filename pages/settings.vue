@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { CheckCircle2, Database, Info } from 'lucide-vue-next'
+
 definePageMeta({ layout: 'default' })
 
 const defaultInterval = ref(60)
@@ -13,7 +15,7 @@ const intervalOptions = [
   { label: '5 minutes', value: 300 },
   { label: '10 minutes', value: 600 },
   { label: '30 minutes', value: 1800 },
-  { label: '1 hour', value: 3600 }
+  { label: '1 hour', value: 3600 },
 ]
 
 function saveSettings() {
@@ -23,33 +25,33 @@ function saveSettings() {
 </script>
 
 <template>
-  <div class="p-6 max-w-full space-y-6">
+  <div class="p-6 space-y-6 max-w-2xl mx-auto">
     <div>
-      <h1 class="text-2xl font-bold text-foreground">Settings</h1>
-      <p class="text-sm text-muted-foreground mt-0.5">Configure global monitoring preferences</p>
+      <h1 class="text-xl font-bold text-foreground">Settings</h1>
+      <p class="text-sm text-muted-foreground">Configure global monitoring preferences</p>
     </div>
 
-    <!-- General Settings -->
+    <!-- General -->
     <Card class="overflow-hidden">
-      <div class="px-5 py-3 border-b border-border">
-        <h2 class="font-semibold text-foreground">General</h2>
+      <div class="px-5 py-3.5 border-b border-border">
+        <h2 class="text-sm font-semibold text-foreground">General</h2>
       </div>
       <div class="p-5 space-y-4">
         <div class="space-y-1.5">
           <Label>Default Check Interval</Label>
-          <p class="text-xs text-muted-foreground">Used when creating new monitors</p>
-          <Select v-model="defaultInterval" :options="intervalOptions" />
+          <p class="text-xs text-muted-foreground">Applied when creating new monitors</p>
+          <div class="max-w-xs">
+            <Select v-model="defaultInterval" :options="intervalOptions" />
+          </div>
         </div>
       </div>
     </Card>
 
-    <!-- Notifications (Placeholder) -->
+    <!-- Notifications -->
     <Card class="overflow-hidden">
-      <div class="px-5 py-3 border-b border-border flex items-center justify-between">
-        <h2 class="font-semibold text-foreground">Notifications</h2>
-        <Badge class="bg-yellow-500/20 text-yellow-400 border-yellow-500/30" variant="outline">
-          Coming Soon
-        </Badge>
+      <div class="flex items-center justify-between px-5 py-3.5 border-b border-border">
+        <h2 class="text-sm font-semibold text-foreground">Notifications</h2>
+        <Badge class="bg-yellow-500/10 text-yellow-400 border-yellow-500/20" variant="outline">Coming Soon</Badge>
       </div>
       <div class="p-5 space-y-4">
         <div class="space-y-1.5">
@@ -59,7 +61,7 @@ function saveSettings() {
             type="email"
             placeholder="alerts@example.com"
             disabled
-            class="opacity-50 cursor-not-allowed"
+            class="max-w-xs opacity-50 cursor-not-allowed"
           />
         </div>
         <div class="space-y-1.5">
@@ -67,80 +69,83 @@ function saveSettings() {
           <Input
             v-model="notificationWebhook"
             type="url"
-            placeholder="https://hooks.slack.com/..."
+            placeholder="https://hooks.slack.com/…"
             disabled
             class="opacity-50 cursor-not-allowed"
           />
         </div>
-        <p class="text-xs text-muted-foreground">
+        <div class="flex items-start gap-2 rounded-md bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
+          <Info class="size-3.5 shrink-0 mt-0.5" />
           Notification integrations will be available in a future update.
-        </p>
+        </div>
       </div>
     </Card>
 
     <!-- Data Management -->
     <Card class="overflow-hidden">
-      <div class="px-5 py-3 border-b border-border">
-        <h2 class="font-semibold text-foreground">Data Management</h2>
+      <div class="flex items-center gap-2 px-5 py-3.5 border-b border-border">
+        <Database class="size-4 text-muted-foreground" />
+        <h2 class="text-sm font-semibold text-foreground">Data Management</h2>
       </div>
-      <div class="p-5 space-y-4">
-        <div class="flex items-start justify-between gap-4 py-2">
+      <div class="divide-y divide-border">
+        <div class="flex items-start justify-between gap-4 px-5 py-4">
           <div>
             <p class="text-sm font-medium text-foreground">Backup Database</p>
             <p class="text-xs text-muted-foreground mt-0.5">
-              Creates a timestamped backup of your SQLite database in <code class="font-mono text-primary">data/backups/</code>
+              Creates a timestamped copy in <code class="font-mono text-primary">data/backups/</code>
             </p>
           </div>
-          <Button variant="secondary" size="sm" as="a" href="/api/health" target="_blank" class="flex-shrink-0">
-            Run <code class="font-mono text-xs ml-1">yarn db:backup</code>
+          <Button variant="secondary" size="sm" as="a" href="/api/health" target="_blank" class="shrink-0 text-xs">
+            <code>yarn db:backup</code>
           </Button>
         </div>
-        <div class="flex items-start justify-between gap-4 py-2 border-t border-border">
+        <div class="flex items-start justify-between gap-4 px-5 py-4">
           <div>
             <p class="text-sm font-medium text-foreground">Heartbeat Retention</p>
             <p class="text-xs text-muted-foreground mt-0.5">
-              The system automatically keeps the latest 1,000 heartbeats per monitor.
+              Automatically keeps the latest 100 heartbeats per monitor
             </p>
           </div>
-          <span class="flex-shrink-0 text-sm text-muted-foreground">1,000 records</span>
+          <span class="text-xs text-muted-foreground shrink-0">100 records</span>
         </div>
       </div>
     </Card>
 
     <!-- About -->
-    <Card class="overflow-hidden">
-      <div class="px-5 py-3 border-b border-border">
-        <h2 class="font-semibold text-foreground">About</h2>
+    <!-- <Card class="overflow-hidden">
+      <div class="flex items-center gap-2 px-5 py-3.5 border-b border-border">
+        <Info class="size-4 text-muted-foreground" />
+        <h2 class="text-sm font-semibold text-foreground">About</h2>
       </div>
-      <div class="p-5 space-y-2 text-sm">
-        <div class="flex justify-between">
+      <div class="px-5 py-4 space-y-2.5 text-xs">
+        <div class="flex justify-between items-center">
           <span class="text-muted-foreground">Application</span>
-          <span class="text-foreground">Uptime Monitor</span>
+          <span class="text-foreground font-medium">Uptime Monitor</span>
         </div>
-        <div class="flex justify-between">
+        <Separator />
+        <div class="flex justify-between items-center">
           <span class="text-muted-foreground">Framework</span>
-          <span class="text-foreground font-mono">Nuxt 3 + Nitro</span>
+          <code class="text-foreground bg-muted/50 px-1.5 py-0.5 rounded">Nuxt 3 + Nitro</code>
         </div>
-        <div class="flex justify-between">
+        <Separator />
+        <div class="flex justify-between items-center">
           <span class="text-muted-foreground">Database</span>
-          <span class="text-foreground font-mono">SQLite + Drizzle ORM</span>
+          <code class="text-foreground bg-muted/50 px-1.5 py-0.5 rounded">SQLite + Drizzle ORM</code>
         </div>
-        <div class="flex justify-between">
+        <Separator />
+        <div class="flex justify-between items-center">
           <span class="text-muted-foreground">UI</span>
-          <span class="text-foreground font-mono">shadcn-vue + Tailwind CSS</span>
+          <code class="text-foreground bg-muted/50 px-1.5 py-0.5 rounded">shadcn-vue + Tailwind CSS</code>
         </div>
       </div>
-    </Card>
+    </Card> -->
 
-    <!-- Save Button -->
-    <div class="flex items-center gap-3">
+    <!-- Save -->
+    <div class="flex items-center justify-end gap-3">
       <Button @click="saveSettings">Save Settings</Button>
       <Transition name="fade">
-        <span v-if="saved" class="text-sm text-green-400 flex items-center gap-1.5">
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-          </svg>
-          Saved!
+        <span v-if="saved" class="flex items-center gap-1.5 text-sm text-green-400">
+          <CheckCircle2 class="size-4" />Saved!
         </span>
       </Transition>
     </div>
@@ -148,10 +153,6 @@ function saveSettings() {
 </template>
 
 <style scoped>
-.fade-enter-active, .fade-leave-active {
-  transition: opacity 0.3s;
-}
-.fade-enter-from, .fade-leave-to {
-  opacity: 0;
-}
+.fade-enter-active, .fade-leave-active { transition: opacity 0.3s }
+.fade-enter-from, .fade-leave-to { opacity: 0 }
 </style>
