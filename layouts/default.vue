@@ -185,8 +185,25 @@ const statusDotClass = (status: string | undefined) => ({
         <!-- Spacer -->
         <div class="flex-1" />
 
+        <!-- Live status chip -->
+        <div
+          v-if="store.totalMonitors > 0"
+          class="hidden sm:flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] text-muted-foreground"
+        >
+          <span
+            :class="[
+              'size-1.5 rounded-full',
+              store.downMonitors > 0 ? 'bg-red-500 animate-pulse' : 'bg-green-500',
+            ]"
+          />
+          <span v-if="store.downMonitors > 0" class="text-red-400 font-medium">
+            {{ store.downMonitors }} down
+          </span>
+          <span v-else class="text-green-400 font-medium">All up</span>
+        </div>
+
         <!-- Breadcrumb / current route hint -->
-        <span class="hidden sm:block text-xs text-muted-foreground capitalize">
+        <span class="hidden lg:block text-xs text-muted-foreground capitalize">
           {{ route.path === '/' ? 'Dashboard' : route.path.replace('/', '').replace('/monitor/', 'Monitor #') }}
         </span>
       </header>

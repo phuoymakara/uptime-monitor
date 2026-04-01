@@ -7,6 +7,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Timer,
   XCircle,
 } from 'lucide-vue-next'
 import { useMonitorsStore } from '~/stores/monitors'
@@ -23,9 +24,30 @@ const deletingId = ref<number | null>(null)
 const searchQuery = ref('')
 const filterStatus = ref<'all' | 'up' | 'down' | 'pending'>('all')
 
-const { pause } = useIntervalFn(() => store.fetchMonitors(), 30000)
-onMounted(() => store.fetchMonitors())
-onUnmounted(pause)
+// Auto-refresh every 30 s — track countdown for display
+const REFRESH_INTERVAL = 30
+const countdown = ref(REFRESH_INTERVAL)
+let countdownTimer: ReturnType<typeof setInterval> | null = null
+
+function startCountdown() {
+  countdown.value = REFRESH_INTERVAL
+  if (countdownTimer) clearInterval(countdownTimer)
+  countdownTimer = setInterval(() => {
+    countdown.value = Math.max(0, countdown.value - 1)
+  }, 1000)
+}
+
+const { pause: pauseRefresh } = useIntervalFn(() => {
+  store.fetchMonitors().then(startCountdown)
+}, REFRESH_INTERVAL * 1000)
+
+onMounted(() => {
+  store.fetchMonitors().then(startCountdown)
+})
+onUnmounted(() => {
+  pauseRefresh()
+  if (countdownTimer) clearInterval(countdownTimer)
+})
 
 const filteredMonitors = computed(() => {
   let list = store.monitors
@@ -71,6 +93,21 @@ const overallStatus = computed(() => {
   return 'operational'
 })
 
+// Average response time across monitors that are currently up
+const avgResponseTime = computed(() => {
+  const times = store.monitors
+    .filter(m => m.latestHeartbeat?.status === 'up' && m.latestHeartbeat?.responseTimeMs != null)
+    .map(m => m.latestHeartbeat!.responseTimeMs as number)
+  if (!times.length) return null
+  return Math.round(times.reduce((a, b) => a + b, 0) / times.length)
+})
+
+function formatAvgRt(ms: number | null): string {
+  if (ms === null) return '—'
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(2)}s`
+}
+
 const STATUS_FILTERS = ['all', 'up', 'down', 'pending'] as const
 </script>
 
@@ -84,7 +121,23 @@ const STATUS_FILTERS = ['all', 'up', 'down', 'pending'] as const
         <p class="text-sm text-muted-foreground">Monitor the uptime of your services</p>
       </div>
       <div class="flex items-center gap-2">
-        <Button variant="outline" size="sm" class="gap-1.5" :disabled="store.loading" @click="store.fetchMonitors()">
+        <!-- Refresh countdown -->
+        <div
+          v-if="store.totalMonitors > 0"
+          class="hidden sm:flex items-center gap-1 text-muted-foreground/60 tabular-nums"
+          :title="`Auto-refresh in ${countdown}s`"
+        >
+          <Timer class="size-3.5" />
+          <span class="text-sm font-medium">{{ countdown }}</span>
+          <span class="text-xs">s</span>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          class="gap-1.5"
+          :disabled="store.loading"
+          @click="store.fetchMonitors().then(startCountdown)"
+        >
           <RefreshCw :class="['size-3.5', store.loading && 'animate-spin']" />
           <span class="hidden sm:inline">Refresh</span>
         </Button>
@@ -123,23 +176,26 @@ const STATUS_FILTERS = ['all', 'up', 'down', 'pending'] as const
     <!-- Stats cards -->
     <div v-if="store.totalMonitors > 0" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
       <Card class="p-4">
-        <div class="text-2xl font-bold text-foreground">{{ store.totalMonitors }}</div>
+        <div class="text-2xl font-bold text-foreground tabular-nums">{{ store.totalMonitors }}</div>
         <div class="text-xs text-muted-foreground mt-1">Total</div>
       </Card>
       <Card class="p-4">
         <div class="flex items-center gap-1.5">
-          <div class="text-2xl font-bold text-green-400">{{ store.upMonitors }}</div>
+          <div class="text-2xl font-bold text-green-400 tabular-nums">{{ store.upMonitors }}</div>
           <BarChart2 class="size-4 text-green-400/50 ml-auto" />
         </div>
         <div class="text-xs text-muted-foreground mt-1">Online</div>
       </Card>
       <Card class="p-4">
-        <div class="text-2xl font-bold text-red-400">{{ store.downMonitors }}</div>
+        <div class="text-2xl font-bold text-red-400 tabular-nums">{{ store.downMonitors }}</div>
         <div class="text-xs text-muted-foreground mt-1">Offline</div>
       </Card>
       <Card class="p-4">
-        <div class="text-2xl font-bold text-yellow-400">{{ store.pendingMonitors }}</div>
-        <div class="text-xs text-muted-foreground mt-1">Pending</div>
+        <div class="flex items-center gap-1.5">
+          <div class="text-2xl font-bold text-foreground tabular-nums">{{ formatAvgRt(avgResponseTime) }}</div>
+          <Clock class="size-4 text-muted-foreground/40 ml-auto" />
+        </div>
+        <div class="text-xs text-muted-foreground mt-1">Avg Response</div>
       </Card>
     </div>
 

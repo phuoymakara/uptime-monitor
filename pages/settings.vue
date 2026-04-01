@@ -1,12 +1,39 @@
 <script setup lang="ts">
-import { CheckCircle2, Database, Info } from 'lucide-vue-next'
+import {
+  Bell,
+  CheckCircle2,
+  Database,
+  Eye,
+  EyeOff,
+  Loader2,
+  Send,
+  XCircle,
+  Zap,
+} from 'lucide-vue-next'
 
 definePageMeta({ layout: 'default' })
 
-const defaultInterval = ref(60)
-const notificationEmail = ref('')
-const notificationWebhook = ref('')
+interface AppSettings {
+  defaultIntervalSeconds: number
+  webhookType: 'discord' | 'slack' | 'telegram' | 'generic'
+  webhookUrl: string
+  telegramBotToken: string
+  telegramChatId: string
+}
+
+const settings = ref<AppSettings>({
+  defaultIntervalSeconds: 60,
+  webhookType: 'discord',
+  webhookUrl: '',
+  telegramBotToken: '',
+  telegramChatId: '',
+})
+
+const saving = ref(false)
 const saved = ref(false)
+const testing = ref(false)
+const testResult = ref<{ ok: boolean; message: string } | null>(null)
+const showToken = ref(false)
 
 const intervalOptions = [
   { label: '30 seconds', value: 30 },
@@ -18,10 +45,52 @@ const intervalOptions = [
   { label: '1 hour', value: 3600 },
 ]
 
-function saveSettings() {
-  saved.value = true
-  setTimeout(() => { saved.value = false }, 3000)
+const webhookTypes = [
+  { label: 'Telegram', value: 'telegram' },
+  { label: 'Discord', value: 'discord' },
+  { label: 'Slack', value: 'slack' },
+  { label: 'Generic', value: 'generic' },
+] as const
+
+onMounted(async () => {
+  try {
+    const data = await $fetch<AppSettings>('/api/settings')
+    settings.value = data
+  } catch {}
+})
+
+async function saveSettings() {
+  saving.value = true
+  try {
+    await $fetch('/api/settings', { method: 'PUT', body: settings.value })
+    saved.value = true
+    setTimeout(() => { saved.value = false }, 3000)
+  } finally {
+    saving.value = false
+  }
 }
+
+async function testNotification() {
+  testing.value = true
+  testResult.value = null
+  try {
+    await $fetch('/api/settings', { method: 'PUT', body: settings.value })
+    await $fetch('/api/settings/test-webhook', { method: 'POST' })
+    testResult.value = { ok: true, message: 'Test notification sent! Check your app.' }
+  } catch (err: any) {
+    testResult.value = { ok: false, message: err?.data?.message || 'Failed to send test notification.' }
+  } finally {
+    testing.value = false
+    setTimeout(() => { testResult.value = null }, 8000)
+  }
+}
+
+const isConfigured = computed(() => {
+  if (settings.value.webhookType === 'telegram') {
+    return !!(settings.value.telegramBotToken && settings.value.telegramChatId)
+  }
+  return !!settings.value.webhookUrl
+})
 </script>
 
 <template>
@@ -33,7 +102,8 @@ function saveSettings() {
 
     <!-- General -->
     <Card class="overflow-hidden">
-      <div class="px-5 py-3.5 border-b border-border">
+      <div class="flex items-center gap-2 px-5 py-3.5 border-b border-border">
+        <Zap class="size-4 text-muted-foreground" />
         <h2 class="text-sm font-semibold text-foreground">General</h2>
       </div>
       <div class="p-5 space-y-4">
@@ -41,7 +111,7 @@ function saveSettings() {
           <Label>Default Check Interval</Label>
           <p class="text-xs text-muted-foreground">Applied when creating new monitors</p>
           <div class="max-w-xs">
-            <Select v-model="defaultInterval" :options="intervalOptions" />
+            <Select v-model="settings.defaultIntervalSeconds" :options="intervalOptions" />
           </div>
         </div>
       </div>
@@ -49,35 +119,140 @@ function saveSettings() {
 
     <!-- Notifications -->
     <Card class="overflow-hidden">
-      <div class="flex items-center justify-between px-5 py-3.5 border-b border-border">
+      <div class="flex items-center gap-2 px-5 py-3.5 border-b border-border">
+        <Bell class="size-4 text-muted-foreground" />
         <h2 class="text-sm font-semibold text-foreground">Notifications</h2>
-        <Badge class="bg-yellow-500/10 text-yellow-400 border-yellow-500/20" variant="outline">Coming Soon</Badge>
       </div>
-      <div class="p-5 space-y-4">
+      <div class="p-5 space-y-5">
+
+        <!-- Service type selector -->
         <div class="space-y-1.5">
-          <Label class="text-muted-foreground">Email Notifications</Label>
-          <Input
-            v-model="notificationEmail"
-            type="email"
-            placeholder="alerts@example.com"
-            disabled
-            class="max-w-xs opacity-50 cursor-not-allowed"
-          />
+          <Label>Service</Label>
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-for="t in webhookTypes"
+              :key="t.value"
+              :class="[
+                'px-3 py-1.5 rounded-md text-xs font-medium border transition-colors',
+                settings.webhookType === t.value
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'border-border text-muted-foreground hover:text-foreground hover:border-foreground/30',
+              ]"
+              @click="settings.webhookType = t.value"
+            >{{ t.label }}</button>
+          </div>
         </div>
-        <div class="space-y-1.5">
-          <Label class="text-muted-foreground">Webhook URL</Label>
-          <Input
-            v-model="notificationWebhook"
-            type="url"
-            placeholder="https://hooks.slack.com/…"
-            disabled
-            class="opacity-50 cursor-not-allowed"
-          />
+
+        <!-- ── Telegram fields ── -->
+        <template v-if="settings.webhookType === 'telegram'">
+          <!-- Bot Token -->
+          <div class="space-y-1.5">
+            <Label>Bot Token</Label>
+            <div class="flex gap-2">
+              <div class="relative flex-1">
+                <Input
+                  v-model="settings.telegramBotToken"
+                  :type="showToken ? 'text' : 'password'"
+                  placeholder="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz"
+                  class="pr-9 font-mono text-xs"
+                />
+                <button
+                  class="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  @click="showToken = !showToken"
+                >
+                  <EyeOff v-if="showToken" class="size-3.5" />
+                  <Eye v-else class="size-3.5" />
+                </button>
+              </div>
+            </div>
+            <p class="text-xs text-muted-foreground">
+              Talk to
+              <a href="https://t.me/BotFather" target="_blank" class="text-primary hover:underline">@BotFather</a>
+              → /newbot → copy the token
+            </p>
+          </div>
+
+          <!-- Chat ID -->
+          <div class="space-y-1.5">
+            <Label>Chat ID</Label>
+            <Input
+              v-model="settings.telegramChatId"
+              placeholder="-1001234567890"
+              class="max-w-xs font-mono text-xs"
+            />
+            <p class="text-xs text-muted-foreground leading-relaxed">
+              For a <span class="text-foreground">group/channel</span>: add your bot as admin, then send a message and check
+              <code class="bg-muted/60 px-1 rounded">api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code>
+              for the <code class="bg-muted/60 px-1 rounded">chat.id</code>.<br>
+              For a <span class="text-foreground">private chat</span>: talk to
+              <a href="https://t.me/userinfobot" target="_blank" class="text-primary hover:underline">@userinfobot</a>
+              to get your ID.
+            </p>
+          </div>
+        </template>
+
+        <!-- ── Webhook URL (Discord / Slack / Generic) ── -->
+        <template v-else>
+          <div class="space-y-1.5">
+            <Label>Webhook URL</Label>
+            <Input
+              v-model="settings.webhookUrl"
+              type="url"
+              :placeholder="
+                settings.webhookType === 'discord' ? 'https://discord.com/api/webhooks/…'
+                : settings.webhookType === 'slack'  ? 'https://hooks.slack.com/services/…'
+                : 'https://your-server.com/webhook'
+              "
+              class="font-mono text-xs"
+            />
+            <p class="text-xs text-muted-foreground">
+              <template v-if="settings.webhookType === 'discord'">
+                Server Settings → Integrations → Webhooks → Copy Webhook URL
+              </template>
+              <template v-else-if="settings.webhookType === 'slack'">
+                Slack App → Incoming Webhooks → Add New Webhook → Copy URL
+              </template>
+              <template v-else>
+                Must accept a POST request with a JSON body
+              </template>
+            </p>
+          </div>
+        </template>
+
+        <!-- Test button + result -->
+        <div class="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            class="gap-1.5"
+            :disabled="!isConfigured || testing"
+            @click="testNotification"
+          >
+            <Loader2 v-if="testing" class="size-3.5 animate-spin" />
+            <Send v-else class="size-3.5" />
+            Send Test Notification
+          </Button>
+
+          <Transition name="fade">
+            <div
+              v-if="testResult"
+              :class="[
+                'flex items-center gap-1.5 text-xs',
+                testResult.ok ? 'text-green-400' : 'text-red-400',
+              ]"
+            >
+              <CheckCircle2 v-if="testResult.ok" class="size-3.5 shrink-0" />
+              <XCircle v-else class="size-3.5 shrink-0" />
+              {{ testResult.message }}
+            </div>
+          </Transition>
         </div>
-        <div class="flex items-start gap-2 rounded-md bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
-          <Info class="size-3.5 shrink-0 mt-0.5" />
-          Notification integrations will be available in a future update.
-        </div>
+
+        <p class="text-xs text-muted-foreground border-t border-border pt-4 leading-relaxed">
+          A notification is sent once when a monitor goes <strong class="text-red-400">down</strong>,
+          and again when it recovers (<strong class="text-green-400">up</strong>).
+          No repeated alerts while the status stays the same.
+        </p>
       </div>
     </Card>
 
@@ -111,43 +286,17 @@ function saveSettings() {
       </div>
     </Card>
 
-    <!-- About -->
-    <!-- <Card class="overflow-hidden">
-      <div class="flex items-center gap-2 px-5 py-3.5 border-b border-border">
-        <Info class="size-4 text-muted-foreground" />
-        <h2 class="text-sm font-semibold text-foreground">About</h2>
-      </div>
-      <div class="px-5 py-4 space-y-2.5 text-xs">
-        <div class="flex justify-between items-center">
-          <span class="text-muted-foreground">Application</span>
-          <span class="text-foreground font-medium">Uptime Monitor</span>
-        </div>
-        <Separator />
-        <div class="flex justify-between items-center">
-          <span class="text-muted-foreground">Framework</span>
-          <code class="text-foreground bg-muted/50 px-1.5 py-0.5 rounded">Nuxt 3 + Nitro</code>
-        </div>
-        <Separator />
-        <div class="flex justify-between items-center">
-          <span class="text-muted-foreground">Database</span>
-          <code class="text-foreground bg-muted/50 px-1.5 py-0.5 rounded">SQLite + Drizzle ORM</code>
-        </div>
-        <Separator />
-        <div class="flex justify-between items-center">
-          <span class="text-muted-foreground">UI</span>
-          <code class="text-foreground bg-muted/50 px-1.5 py-0.5 rounded">shadcn-vue + Tailwind CSS</code>
-        </div>
-      </div>
-    </Card> -->
-
     <!-- Save -->
     <div class="flex items-center justify-end gap-3">
-      <Button @click="saveSettings">Save Settings</Button>
       <Transition name="fade">
         <span v-if="saved" class="flex items-center gap-1.5 text-sm text-green-400">
           <CheckCircle2 class="size-4" />Saved!
         </span>
       </Transition>
+      <Button :disabled="saving" class="gap-2" @click="saveSettings">
+        <Loader2 v-if="saving" class="size-3.5 animate-spin" />
+        Save Settings
+      </Button>
     </div>
   </div>
 </template>
