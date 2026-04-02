@@ -131,7 +131,7 @@ const statusDotClass = (status: string | undefined) => ({
         <SidebarSeparator v-if="isOpen" />
 
         <!-- Monitor list -->
-        <SidebarGroup v-if="store.monitors.length > 0">
+        <SidebarGroup v-if="store.monitors.length > 0" class="overflow-x-auto">
           <SidebarGroupLabel>Monitors</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>

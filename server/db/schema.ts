@@ -31,6 +31,7 @@ export const monitors = sqliteTable('monitors', {
   timeoutSeconds: integer('timeout_seconds').notNull().default(30),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   visibility: text('visibility', { enum: ['public', 'private'] }).notNull().default('public'),
+  regions: text('regions').default('["asia"]'),
   userId: integer('user_id').references(() => users.id),
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),

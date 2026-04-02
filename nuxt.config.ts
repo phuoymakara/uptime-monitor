@@ -10,10 +10,6 @@ export default defineNuxtConfig({
   },
   future: { compatibilityVersion: 4 },
   modules: ['@nuxtjs/tailwindcss', '@pinia/nuxt', 'shadcn-nuxt', '@vueuse/nuxt'],
-  shadcn: {
-    prefix: '',
-    componentDir: './components/ui'
-  },
   tailwindcss: {
     cssPath: '~/assets/css/main.css',
     configPath: 'tailwind.config.ts'

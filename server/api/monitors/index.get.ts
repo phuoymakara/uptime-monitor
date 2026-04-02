@@ -1,4 +1,5 @@
 import { db } from '../../db/index'
+import { parseRegions } from '../../utils/regions'
 import { monitors } from '../../db/schema'
 import { eq } from 'drizzle-orm'
 import { calcUptimeStatsBatch, getRecentHeartbeatsBatch } from '../../utils/heartbeats'
@@ -25,6 +26,7 @@ export default defineEventHandler((event) => {
 
     return allMonitors.map(monitor => ({
       ...monitor,
+      regions: parseRegions(monitor.regions),
       latestHeartbeat:  heartbeatMap[monitor.id]?.latest  ?? null,
       ...(uptimeMap[monitor.id] ?? { uptime24h: null, uptime7d: null, uptime30d: null }),
       recentHeartbeats: heartbeatMap[monitor.id]?.recent  ?? [],

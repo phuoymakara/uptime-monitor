@@ -2,6 +2,7 @@ import { db } from '../../db/index'
 import { monitors, heartbeats } from '../../db/schema'
 import { eq, desc } from 'drizzle-orm'
 import { calcUptimeStats, getRecentHeartbeats } from '../../utils/heartbeats'
+import { parseRegions } from '../../utils/regions'
 
 export default defineEventHandler(async (event) => {
   try {
@@ -40,6 +41,7 @@ export default defineEventHandler(async (event) => {
 
     return {
       ...monitor,
+      regions: parseRegions(monitor.regions),
       latestHeartbeat: latest,
       ...uptime,
       recentHeartbeats,

@@ -71,6 +71,10 @@ if (!monitorCols.includes('visibility')) {
   sqlite.exec(`ALTER TABLE monitors ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'`)
   console.log('[DB] Added visibility column to monitors')
 }
+if (!monitorCols.includes('regions')) {
+  sqlite.exec(`ALTER TABLE monitors ADD COLUMN regions TEXT DEFAULT '["asia"]'`)
+  console.log('[DB] Added regions column to monitors')
+}
 
 // Seed admin user (only if no users exist) ─
 
