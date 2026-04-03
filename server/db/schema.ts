@@ -49,6 +49,7 @@ export const heartbeats = sqliteTable('heartbeats', {
     .references(() => monitors.id, { onDelete: 'cascade' }),
   status: text('status', { enum: ['up', 'down', 'pending'] }).notNull().default('pending'),
   responseTimeMs: integer('response_time_ms'),
+  durationMs: integer('duration_ms'),
   checkedAt: integer('checked_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   message: text('message'),
 }, (t) => ({

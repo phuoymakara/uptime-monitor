@@ -61,6 +61,27 @@ sqlite.exec(`
 
 // Safe column additions (idempotent ALTER TABLE) ─
 
+// Heartbeat column additions
+const heartbeatCols = (sqlite.pragma('table_info(heartbeats)') as { name: string }[]).map(c => c.name)
+
+if (!heartbeatCols.includes('duration_ms')) {
+  sqlite.exec(`ALTER TABLE heartbeats ADD COLUMN duration_ms INTEGER`)
+  // Backfill: estimate duration as (checked_at - previous checked_at) per monitor, capped at interval * 2
+  sqlite.exec(`
+    UPDATE heartbeats SET duration_ms = (
+      SELECT MIN((heartbeats.checked_at - prev.checked_at), m.interval_seconds * 2000)
+      FROM heartbeats prev
+      JOIN monitors m ON m.id = heartbeats.monitor_id
+      WHERE prev.monitor_id = heartbeats.monitor_id
+        AND prev.checked_at < heartbeats.checked_at
+      ORDER BY prev.checked_at DESC
+      LIMIT 1
+    )
+    WHERE duration_ms IS NULL AND checked_at IS NOT NULL
+  `)
+  console.log('[DB] Added duration_ms column to heartbeats and backfilled estimates')
+}
+
 const monitorCols = (sqlite.pragma('table_info(monitors)') as { name: string }[]).map(c => c.name)
 
 if (!monitorCols.includes('user_id')) {

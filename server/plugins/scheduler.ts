@@ -14,6 +14,9 @@ const monitorTimers = new Map<number, ReturnType<typeof setInterval>>()
 // Track last known status to detect changes
 const previousStatus = new Map<number, string>()
 
+// Track last check time per monitor for duration_ms calculation
+const lastCheckedAt = new Map<number, number>()
+
 // Prepared statement for pruning (created once, reused on every check)
 const pruneStmt = sqlite.prepare(`
   DELETE FROM heartbeats
@@ -41,11 +44,17 @@ async function checkMonitor(monitorId: number) {
       monitor.timeoutSeconds
     )
 
+    const now = Date.now()
+    const prev = lastCheckedAt.get(monitorId)
+    const durationMs = prev ? Math.min(now - prev, monitor.intervalSeconds * 2 * 1000) : null
+    lastCheckedAt.set(monitorId, now)
+
     db.insert(heartbeats).values({
       monitorId: monitor.id,
       status: result.status,
       responseTimeMs: result.responseTimeMs,
-      checkedAt: new Date(),
+      durationMs,
+      checkedAt: new Date(now),
       message: result.message
     }).run()
 
@@ -93,6 +102,7 @@ function stopMonitor(monitorId: number) {
   if (timer) {
     clearInterval(timer)
     monitorTimers.delete(monitorId)
+    lastCheckedAt.delete(monitorId)
   }
 }
 
@@ -125,7 +135,10 @@ export default defineNitroPlugin(async () => {
         .all()
         .sort((a, b) => (b.checkedAt?.getTime() ?? 0) - (a.checkedAt?.getTime() ?? 0))[0]
 
-      if (latest) previousStatus.set(monitor.id, latest.status)
+      if (latest) {
+        previousStatus.set(monitor.id, latest.status)
+        if (latest.checkedAt) lastCheckedAt.set(monitor.id, latest.checkedAt.getTime())
+      }
 
       // Stagger startup by 500 ms per monitor to avoid a thundering herd on boot
       if (i === 0) {

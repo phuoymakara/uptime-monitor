@@ -8,39 +8,38 @@ export interface UptimeStats {
   uptime30d: number | null
 }
 
-const pct = (up: number | null, total: number | null): number | null =>
-  total ? Math.round(((up ?? 0) / total) * 1000) / 10 : null
+const pct = (upMs: number | null, totalMs: number | null): number | null =>
+  totalMs ? Math.round(((upMs ?? 0) / totalMs) * 1000) / 10 : null
 
 // ─── Single-monitor ──────────────────────────────────────────────────────────
 
 /**
- * Calculates uptime % for 24h, 7d, and 30d windows in a single SQL query
- * using conditional aggregation — avoids loading rows into JS memory.
+ * Time-weighted uptime: SUM(duration_ms where up) / SUM(duration_ms).
+ * Rows without duration_ms (first heartbeat per monitor) are excluded from
+ * both numerator and denominator — they don't skew the result.
  */
 export function calcUptimeStats(monitorId: number): UptimeStats {
-  const now     = Date.now()
-  const ms30d   = now - 30 * 24 * 60 * 60 * 1000
-  const ms7d    = now -  7 * 24 * 60 * 60 * 1000
-  const ms24h   = now -      24 * 60 * 60 * 1000
+  const now   = Date.now()
+  const ms30d = now - 30 * 24 * 60 * 60 * 1000
+  const ms7d  = now -  7 * 24 * 60 * 60 * 1000
+  const ms24h = now -      24 * 60 * 60 * 1000
 
-  // gte() uses Drizzle's ORM path which converts Date → integer automatically.
-  // sql<> templates bypass that, so pass raw integer milliseconds directly.
   const row = db.select({
-    total30d: sql<number>`COUNT(*)`,
-    up30d:    sql<number>`SUM(CASE WHEN ${heartbeats.status} = 'up' THEN 1 ELSE 0 END)`,
-    total7d:  sql<number>`SUM(CASE WHEN ${heartbeats.checkedAt} >= ${ms7d} THEN 1 ELSE 0 END)`,
-    up7d:     sql<number>`SUM(CASE WHEN ${heartbeats.status} = 'up' AND ${heartbeats.checkedAt} >= ${ms7d} THEN 1 ELSE 0 END)`,
-    total24h: sql<number>`SUM(CASE WHEN ${heartbeats.checkedAt} >= ${ms24h} THEN 1 ELSE 0 END)`,
-    up24h:    sql<number>`SUM(CASE WHEN ${heartbeats.status} = 'up' AND ${heartbeats.checkedAt} >= ${ms24h} THEN 1 ELSE 0 END)`,
+    totalMs30d: sql<number>`SUM(${heartbeats.durationMs})`,
+    upMs30d:    sql<number>`SUM(CASE WHEN ${heartbeats.status} = 'up' THEN ${heartbeats.durationMs} END)`,
+    totalMs7d:  sql<number>`SUM(CASE WHEN ${heartbeats.checkedAt} >= ${ms7d} THEN ${heartbeats.durationMs} END)`,
+    upMs7d:     sql<number>`SUM(CASE WHEN ${heartbeats.status} = 'up' AND ${heartbeats.checkedAt} >= ${ms7d} THEN ${heartbeats.durationMs} END)`,
+    totalMs24h: sql<number>`SUM(CASE WHEN ${heartbeats.checkedAt} >= ${ms24h} THEN ${heartbeats.durationMs} END)`,
+    upMs24h:    sql<number>`SUM(CASE WHEN ${heartbeats.status} = 'up' AND ${heartbeats.checkedAt} >= ${ms24h} THEN ${heartbeats.durationMs} END)`,
   })
     .from(heartbeats)
     .where(and(eq(heartbeats.monitorId, monitorId), gte(heartbeats.checkedAt, new Date(ms30d))))
     .get()
 
   return {
-    uptime24h: pct(row?.up24h ?? null, row?.total24h ?? null),
-    uptime7d:  pct(row?.up7d  ?? null, row?.total7d  ?? null),
-    uptime30d: pct(row?.up30d ?? null, row?.total30d ?? null),
+    uptime24h: pct(row?.upMs24h ?? null, row?.totalMs24h ?? null),
+    uptime7d:  pct(row?.upMs7d  ?? null, row?.totalMs7d  ?? null),
+    uptime30d: pct(row?.upMs30d ?? null, row?.totalMs30d ?? null),
   }
 }
 
@@ -65,8 +64,7 @@ export function getRecentHeartbeats(monitorId: number, limit = 10) {
 // ─── Batch (N+1 fix) ─────────────────────────────────────────────────────────
 
 /**
- * Calculates uptime stats for multiple monitors in a single SQL query (GROUP BY).
- * Reduces N uptime queries to 1 regardless of monitor count.
+ * Time-weighted uptime for multiple monitors in one SQL query (GROUP BY).
  */
 export function calcUptimeStatsBatch(monitorIds: number[]): Record<number, UptimeStats> {
   if (monitorIds.length === 0) return {}
@@ -77,13 +75,13 @@ export function calcUptimeStatsBatch(monitorIds: number[]): Record<number, Uptim
   const ms24h = now -      24 * 60 * 60 * 1000
 
   const rows = db.select({
-    monitorId: heartbeats.monitorId,
-    total30d:  sql<number>`COUNT(*)`,
-    up30d:     sql<number>`SUM(CASE WHEN ${heartbeats.status} = 'up' THEN 1 ELSE 0 END)`,
-    total7d:   sql<number>`SUM(CASE WHEN ${heartbeats.checkedAt} >= ${ms7d} THEN 1 ELSE 0 END)`,
-    up7d:      sql<number>`SUM(CASE WHEN ${heartbeats.status} = 'up' AND ${heartbeats.checkedAt} >= ${ms7d} THEN 1 ELSE 0 END)`,
-    total24h:  sql<number>`SUM(CASE WHEN ${heartbeats.checkedAt} >= ${ms24h} THEN 1 ELSE 0 END)`,
-    up24h:     sql<number>`SUM(CASE WHEN ${heartbeats.status} = 'up' AND ${heartbeats.checkedAt} >= ${ms24h} THEN 1 ELSE 0 END)`,
+    monitorId:  heartbeats.monitorId,
+    totalMs30d: sql<number>`SUM(${heartbeats.durationMs})`,
+    upMs30d:    sql<number>`SUM(CASE WHEN ${heartbeats.status} = 'up' THEN ${heartbeats.durationMs} END)`,
+    totalMs7d:  sql<number>`SUM(CASE WHEN ${heartbeats.checkedAt} >= ${ms7d} THEN ${heartbeats.durationMs} END)`,
+    upMs7d:     sql<number>`SUM(CASE WHEN ${heartbeats.status} = 'up' AND ${heartbeats.checkedAt} >= ${ms7d} THEN ${heartbeats.durationMs} END)`,
+    totalMs24h: sql<number>`SUM(CASE WHEN ${heartbeats.checkedAt} >= ${ms24h} THEN ${heartbeats.durationMs} END)`,
+    upMs24h:    sql<number>`SUM(CASE WHEN ${heartbeats.status} = 'up' AND ${heartbeats.checkedAt} >= ${ms24h} THEN ${heartbeats.durationMs} END)`,
   })
     .from(heartbeats)
     .where(and(inArray(heartbeats.monitorId, monitorIds), gte(heartbeats.checkedAt, new Date(ms30d))))
@@ -93,9 +91,9 @@ export function calcUptimeStatsBatch(monitorIds: number[]): Record<number, Uptim
   const result: Record<number, UptimeStats> = {}
   for (const row of rows) {
     result[row.monitorId] = {
-      uptime24h: pct(row.up24h, row.total24h),
-      uptime7d:  pct(row.up7d,  row.total7d),
-      uptime30d: pct(row.up30d, row.total30d),
+      uptime24h: pct(row.upMs24h, row.totalMs24h),
+      uptime7d:  pct(row.upMs7d,  row.totalMs7d),
+      uptime30d: pct(row.upMs30d, row.totalMs30d),
     }
   }
   return result
@@ -104,7 +102,6 @@ export function calcUptimeStatsBatch(monitorIds: number[]): Record<number, Uptim
 /**
  * Fetches the last N heartbeats for multiple monitors in a single SQL query
  * using a window function (ROW_NUMBER PARTITION BY monitor_id).
- * Reduces N recent-heartbeat queries to 1 regardless of monitor count.
  */
 export function getRecentHeartbeatsBatch(monitorIds: number[], limit = 10) {
   if (monitorIds.length === 0) return {} as Record<number, { latest: any; recent: any[] }>
@@ -112,10 +109,11 @@ export function getRecentHeartbeatsBatch(monitorIds: number[], limit = 10) {
   const placeholders = monitorIds.map(() => '?').join(', ')
   const rows = sqlite.prepare(`
     SELECT id,
-           monitor_id  AS monitorId,
+           monitor_id       AS monitorId,
            status,
            response_time_ms AS responseTimeMs,
-           checked_at  AS checkedAt,
+           duration_ms      AS durationMs,
+           checked_at       AS checkedAt,
            message
     FROM (
       SELECT *,
@@ -130,16 +128,15 @@ export function getRecentHeartbeatsBatch(monitorIds: number[], limit = 10) {
     monitorId: number
     status: 'up' | 'down' | 'pending'
     responseTimeMs: number | null
+    durationMs: number | null
     checkedAt: number | null
     message: string | null
   }>
 
-  // Initialise empty buckets for every requested monitor
   const result: Record<number, { latest: any; recent: any[] }> = {}
   for (const id of monitorIds) result[id] = { latest: null, recent: [] }
 
   for (const row of rows) {
-    // Convert integer timestamp → Date so serialisation matches Drizzle output
     const mapped = { ...row, checkedAt: row.checkedAt != null ? new Date(row.checkedAt) : null }
     result[row.monitorId].recent.push(mapped)
   }

@@ -9,7 +9,28 @@ export default defineNuxtConfig({
     },
   },
   future: { compatibilityVersion: 4 },
+  // components: {
+  //   dirs: [
+  //     { path: '~/components/ui', pathPrefix: false, extensions: ['vue'] },
+  //     { path: '~/components', extensions: ['vue'], ignore: ['ui/**'] },
+  //   ],
+  // },
+  components: [
+    {
+      path: '~/components',
+      pathPrefix: false,
+    }
+  ],
+  // Ignore index.ts files in the UI directory to avoid collisions
+  ignore: [
+    'components/ui/**/*.ts',
+    'components/ui/**/index.ts'
+  ],
   modules: ['@nuxtjs/tailwindcss', '@pinia/nuxt', 'shadcn-nuxt', '@vueuse/nuxt'],
+  shadcn: {
+    // prefix: '',
+    componentDir: './components/ui'
+  },
   tailwindcss: {
     cssPath: '~/assets/css/main.css',
     configPath: 'tailwind.config.ts'
