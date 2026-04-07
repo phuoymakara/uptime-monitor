@@ -15,6 +15,14 @@ import type { Monitor } from '~/stores/monitors'
 
 definePageMeta({ layout: 'default' })
 
+useSeoMeta({
+  title: 'Dashboard',
+  description: 'Monitor the uptime and response times of all your services in real time.',
+  ogTitle: 'Dashboard · Uptime Monitor',
+  ogDescription: 'Monitor the uptime and response times of all your services in real time.',
+  robots: 'noindex, nofollow',
+})
+
 const store = useMonitorsStore()
 
 const showForm = ref(false)

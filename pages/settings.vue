@@ -13,6 +13,14 @@ import {
 
 definePageMeta({ layout: 'default' })
 
+useSeoMeta({
+  title: 'Settings',
+  description: 'Configure monitoring intervals, notification webhooks, and data management options.',
+  ogTitle: 'Settings · Uptime Monitor',
+  ogDescription: 'Configure monitoring intervals, notification webhooks, and data management options.',
+  robots: 'noindex, nofollow',
+})
+
 interface AppSettings {
   defaultIntervalSeconds: number
   webhookType: 'discord' | 'slack' | 'telegram' | 'generic'

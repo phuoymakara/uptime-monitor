@@ -12,6 +12,16 @@ import type { Heartbeat } from '~/stores/monitors'
 
 definePageMeta({ layout: false })
 
+useSeoMeta({
+  title: 'System Status',
+  titleTemplate: '%s · Uptime Monitor',
+  description: 'Real-time status and availability of our services. Check if everything is operational.',
+  ogTitle: 'System Status · Uptime Monitor',
+  ogDescription: 'Real-time status and availability of our services. Check if everything is operational.',
+  ogType: 'website',
+  robots: 'index, follow',
+})
+
 interface PublicMonitor {
   id: number
   name: string
