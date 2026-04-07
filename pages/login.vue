@@ -4,6 +4,14 @@ import { useAuthStore } from '~/stores/auth'
 
 definePageMeta({ layout: false })
 
+useSeoMeta({
+  title: 'Sign In',
+  description: 'Sign in to your Uptime Monitor dashboard.',
+  ogTitle: 'Sign In · Uptime Monitor',
+  ogDescription: 'Sign in to your Uptime Monitor dashboard.',
+  robots: 'noindex, nofollow',
+})
+
 const auth = useAuthStore()
 const router = useRouter()
 

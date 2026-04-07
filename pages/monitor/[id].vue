@@ -16,6 +16,14 @@ import { formatResponseTime, formatUptime } from '~/composables/useMonitorStats'
 
 definePageMeta({ layout: 'default' })
 
+useSeoMeta({
+  title: 'Monitor Detail',
+  description: 'View uptime history, response times, and incident log for this monitor.',
+  ogTitle: 'Monitor Detail · Uptime Monitor',
+  ogDescription: 'View uptime history, response times, and incident log for this monitor.',
+  robots: 'noindex, nofollow',
+})
+
 const route = useRoute()
 const router = useRouter()
 const store = useMonitorsStore()
@@ -75,6 +83,15 @@ async function loadAll() {
 
 watch(selectedPeriod, () => { recentPage.value = 1; fetchHeartbeats() })
 watch([recentPage, recentPageSize], fetchHeartbeats)
+watch(monitor, (m) => {
+  if (!m) return
+  useSeoMeta({
+    title: m.name,
+    ogTitle: `${m.name} · Uptime Monitor`,
+    description: `Uptime, response times, and incident history for ${m.name} (${m.url}).`,
+    ogDescription: `Uptime, response times, and incident history for ${m.name} (${m.url}).`,
+  })
+})
 onMounted(loadAll)
 const { pause } = useIntervalFn(loadAll, 30000)
 onUnmounted(pause)

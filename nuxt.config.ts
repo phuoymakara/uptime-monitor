@@ -5,7 +5,12 @@ export default defineNuxtConfig({
   },
   app: {
     head: {
+      titleTemplate: '%s · Uptime Monitor',
       link: [{ rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
+      meta: [
+        { name: 'theme-color', content: '#0f1729' },
+        { name: 'robots', content: 'noindex, nofollow' },
+      ],
     },
   },
   future: { compatibilityVersion: 4 },

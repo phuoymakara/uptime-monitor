@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   Activity,
+  Database,
   ExternalLink,
   LayoutDashboard,
   LogOut,
@@ -101,6 +102,19 @@ const statusDotClass = (status: string | undefined) => ({
                         !isOpen && 'opacity-0 w-0 overflow-hidden',
                       ]"
                     >Settings</span>
+                  </NuxtLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton as-child :is-active="isActive('/backups')">
+                  <NuxtLink to="/backups">
+                    <Database />
+                    <span
+                      :class="[
+                        'truncate transition-all duration-300',
+                        !isOpen && 'opacity-0 w-0 overflow-hidden',
+                      ]"
+                    >Backups</span>
                   </NuxtLink>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -284,7 +298,7 @@ const statusDotClass = (status: string | undefined) => ({
       <!-- Sheet nav -->
       <div class="flex flex-col gap-2 p-3 overflow-y-auto flex-1">
         <NuxtLink
-          v-for="item in [{ to: '/', icon: LayoutDashboard, label: 'Dashboard' }, { to: '/settings', icon: Settings2, label: 'Settings' }]"
+          v-for="item in [{ to: '/', icon: LayoutDashboard, label: 'Dashboard' }, { to: '/settings', icon: Settings2, label: 'Settings' }, { to: '/backups', icon: Database, label: 'Backups' }]"
           :key="item.to"
           :to="item.to"
           :class="[
