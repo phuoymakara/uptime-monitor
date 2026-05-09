@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: "uptime-monitor",
+      name: "uptime-uat",
       script: "yarn",
       args: "start",
       env: {
