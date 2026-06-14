@@ -1,6 +1,6 @@
 import { db, sqlite } from '../db/index'
 import { heartbeats } from '../db/schema'
-import { eq, desc, gte, and, sql, inArray } from 'drizzle-orm'
+import { eq, desc, gte, and, sql, inArray, ne } from 'drizzle-orm'
 
 export interface UptimeStats {
   uptime24h: number | null
@@ -36,7 +36,7 @@ export function calcUptimeStats(monitorId: number): UptimeStats {
     upMs24h:    sql<number>`SUM(CASE WHEN ${heartbeats.status} = 'up' AND ${heartbeats.checkedAt} >= ${s24h} THEN ${heartbeats.durationMs} END)`,
   })
     .from(heartbeats)
-    .where(and(eq(heartbeats.monitorId, monitorId), gte(heartbeats.checkedAt, new Date(ms30d))))
+    .where(and(eq(heartbeats.monitorId, monitorId), gte(heartbeats.checkedAt, new Date(ms30d)), eq(heartbeats.region, 'local')))
     .get()
 
   return {
@@ -53,7 +53,7 @@ export function calcUptimeStats(monitorId: number): UptimeStats {
 export function getRecentHeartbeats(monitorId: number, limit = 10) {
   const rows = db.select()
     .from(heartbeats)
-    .where(eq(heartbeats.monitorId, monitorId))
+    .where(and(eq(heartbeats.monitorId, monitorId), eq(heartbeats.region, 'local')))
     .orderBy(desc(heartbeats.checkedAt))
     .limit(limit)
     .all()
@@ -90,7 +90,7 @@ export function calcUptimeStatsBatch(monitorIds: number[]): Record<number, Uptim
     upMs24h:    sql<number>`SUM(CASE WHEN ${heartbeats.status} = 'up' AND ${heartbeats.checkedAt} >= ${s24h} THEN ${heartbeats.durationMs} END)`,
   })
     .from(heartbeats)
-    .where(and(inArray(heartbeats.monitorId, monitorIds), gte(heartbeats.checkedAt, new Date(ms30d))))
+    .where(and(inArray(heartbeats.monitorId, monitorIds), gte(heartbeats.checkedAt, new Date(ms30d)), eq(heartbeats.region, 'local')))
     .groupBy(heartbeats.monitorId)
     .all()
 
@@ -125,7 +125,7 @@ export function getRecentHeartbeatsBatch(monitorIds: number[], limit = 10) {
       SELECT *,
              ROW_NUMBER() OVER (PARTITION BY monitor_id ORDER BY checked_at DESC) AS rn
       FROM heartbeats
-      WHERE monitor_id IN (${placeholders})
+      WHERE monitor_id IN (${placeholders}) AND region = 'local'
     )
     WHERE rn <= ?
     ORDER BY monitorId, checkedAt ASC
@@ -153,4 +153,110 @@ export function getRecentHeartbeatsBatch(monitorIds: number[], limit = 10) {
   }
 
   return result
+}
+
+// ─── Summary rollup ──────────────────────────────────────────────────────────
+
+export interface SummaryBucket {
+  bucket: string
+  checkCount: number
+  upCount: number
+  downCount: number
+  avgResponse: number
+}
+
+/**
+ * Aggregates raw heartbeats into daily `heartbeat_summaries` rows.
+ * Safe to run repeatedly — uses INSERT OR REPLACE.
+ * Only processes completed days (before today UTC).
+ */
+export function runNightlyRollup() {
+  const startOfToday = new Date()
+  startOfToday.setUTCHours(0, 0, 0, 0)
+  const todayMs = startOfToday.getTime()
+
+  try {
+    const upsert = sqlite.prepare(`
+      INSERT OR REPLACE INTO heartbeat_summaries
+        (monitor_id, bucket, bucket_type, region, check_count, up_count, down_count, avg_response)
+      SELECT
+        monitor_id,
+        strftime('%Y-%m-%d', datetime(checked_at / 1000, 'unixepoch')) AS bucket,
+        'day'                                                           AS bucket_type,
+        COALESCE(region, 'local')                                       AS region,
+        COUNT(*)                                                        AS check_count,
+        SUM(CASE WHEN status = 'up'   THEN 1 ELSE 0 END)               AS up_count,
+        SUM(CASE WHEN status = 'down' THEN 1 ELSE 0 END)               AS down_count,
+        COALESCE(AVG(CASE WHEN response_time_ms IS NOT NULL
+                          THEN CAST(response_time_ms AS REAL) END), 0.0) AS avg_response
+      FROM heartbeats
+      WHERE checked_at IS NOT NULL AND checked_at < ?
+      GROUP BY monitor_id, bucket, region
+    `).run(todayMs)
+
+    // Prune daily summaries older than 2 years
+    const cutoff = new Date()
+    cutoff.setUTCFullYear(cutoff.getUTCFullYear() - 2)
+    sqlite.prepare(`
+      DELETE FROM heartbeat_summaries WHERE bucket_type = 'day' AND bucket < ?
+    `).run(cutoff.toISOString().slice(0, 10))
+
+    console.log(`[Rollup] Daily summaries upserted: ${(upsert as any).changes} row(s)`)
+  } catch (err) {
+    console.error('[Rollup] Failed:', err)
+  }
+}
+
+/**
+ * Returns daily summary buckets for multiple monitors, ordered oldest-first.
+ */
+export function getSummaryBucketsBatch(monitorIds: number[], days: number) {
+  if (monitorIds.length === 0) return {} as Record<number, SummaryBucket[]>
+
+  const startDate = new Date()
+  startDate.setUTCDate(startDate.getUTCDate() - days)
+  const startDateStr = startDate.toISOString().slice(0, 10)
+
+  const placeholders = monitorIds.map(() => '?').join(', ')
+  const rows = sqlite.prepare(`
+    SELECT monitor_id AS monitorId, bucket,
+           check_count AS checkCount, up_count AS upCount,
+           down_count  AS downCount, avg_response AS avgResponse
+    FROM heartbeat_summaries
+    WHERE bucket_type = 'day'
+      AND region = 'local'
+      AND monitor_id IN (${placeholders})
+      AND bucket >= ?
+    ORDER BY monitorId, bucket ASC
+  `).all(...monitorIds, startDateStr) as Array<SummaryBucket & { monitorId: number }>
+
+  const result: Record<number, SummaryBucket[]> = {}
+  for (const id of monitorIds) result[id] = []
+  for (const row of rows) {
+    result[row.monitorId]?.push({
+      bucket: row.bucket, checkCount: row.checkCount,
+      upCount: row.upCount, downCount: row.downCount, avgResponse: row.avgResponse,
+    })
+  }
+  return result
+}
+
+export function getLatestPerRegion(monitorId: number) {
+  return sqlite.prepare(`
+    SELECT region, status, response_time_ms AS responseTimeMs, checked_at AS checkedAt, message
+    FROM (
+      SELECT *,
+             ROW_NUMBER() OVER (PARTITION BY region ORDER BY checked_at DESC) AS rn
+      FROM heartbeats
+      WHERE monitor_id = ? AND region != 'local'
+    )
+    WHERE rn = 1
+    ORDER BY region
+  `).all(monitorId) as Array<{
+    region: string
+    status: 'up' | 'down' | 'pending'
+    responseTimeMs: number | null
+    checkedAt: number | null
+    message: string | null
+  }>
 }

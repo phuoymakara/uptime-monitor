@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Globe, Lock, Monitor, Server } from 'lucide-vue-next'
+import { Globe, Lock, MapPin, Server } from 'lucide-vue-next'
 import type { Monitor as MonitorType } from '~/stores/monitors'
 import { useMonitorsStore } from '~/stores/monitors'
 
@@ -17,15 +17,30 @@ const emit = defineEmits<{
 const store = useMonitorsStore()
 const isEditing = computed(() => !!props.monitor)
 
+// Regions derived from registered agents
+const availableRegions = ref<string[]>([])
+onMounted(async () => {
+  try {
+    const agents = await $fetch<{ region: string }[]>('/api/agents')
+    availableRegions.value = [...new Set(agents.map(a => a.region))]
+  } catch {}
+})
+
+function toggleRegion(region: string) {
+  const idx = form.value.regions.indexOf(region)
+  if (idx === -1) form.value.regions.push(region)
+  else            form.value.regions.splice(idx, 1)
+}
+
 const defaultForm = {
   name: '',
   url: '',
   type: 'http' as 'http' | 'tcp',
   intervalSeconds: 60,
-  timeoutSeconds: 30,
+  timeoutSeconds: 5,
   enabled: true,
   visibility: 'public' as 'public' | 'private',
-  regions: ['asia'] as string[],
+  regions: [] as string[],
 }
 
 const form = ref({ ...defaultForm })
@@ -46,7 +61,7 @@ watch(
         timeoutSeconds: props.monitor.timeoutSeconds,
         enabled: props.monitor.enabled,
         visibility: props.monitor.visibility ?? 'public',
-        regions: props.monitor.regions?.length ? [...props.monitor.regions] : ['north-america'],
+        regions: props.monitor.regions?.length ? [...props.monitor.regions] : [],
       }
     } else {
       form.value = { ...defaultForm }
@@ -80,7 +95,7 @@ function validate() {
       errors.value.url = 'Required format: host:port or tcp://host:port'
     }
   }
-  return Object.keys(errors.value).length === 0
+return Object.keys(errors.value).length === 0
 }
 
 async function handleSubmit() {
@@ -144,8 +159,7 @@ async function handleSubmit() {
             ]"
             @click="form.type = 'http'"
           >
-            <Globe class="size-4" />
-            HTTP / HTTPS
+            <Globe class="size-4" />HTTP
           </button>
           <button
             type="button"
@@ -157,13 +171,12 @@ async function handleSubmit() {
             ]"
             @click="form.type = 'tcp'"
           >
-            <Server class="size-4" />
-            TCP Port
+            <Server class="size-4" />TCP
           </button>
         </div>
       </div>
 
-      <!-- URL / Host:Port -->
+      <!-- URL / Host:Port / Hostname -->
       <div class="space-y-1.5">
         <Label for="monitor-url">{{ form.type === 'http' ? 'URL' : 'Host : Port' }}</Label>
         <Input
@@ -192,6 +205,29 @@ async function handleSubmit() {
             max="60"
           />
         </div>
+      </div>
+
+      <!-- Regions (only shown when agents are registered) -->
+      <div v-if="availableRegions.length" class="space-y-1.5">
+        <Label class="flex items-center gap-1.5">
+          <MapPin class="size-3.5 text-muted-foreground" />
+          Check From Regions
+        </Label>
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="region in availableRegions"
+            :key="region"
+            type="button"
+            :class="[
+              'px-3 py-1.5 rounded-md text-xs font-medium border transition-colors',
+              form.regions.includes(region)
+                ? 'bg-primary/10 border-primary/50 text-primary'
+                : 'border-input text-muted-foreground hover:border-border hover:text-foreground',
+            ]"
+            @click="toggleRegion(region)"
+          >{{ formatRegionLabel(region) }}</button>
+        </div>
+        <p class="text-xs text-muted-foreground">Select regions to run multi-region checks. Leave all unselected for local-only check.</p>
       </div>
 
       <!-- Enable toggle -->

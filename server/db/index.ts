@@ -64,6 +64,11 @@ sqlite.exec(`
 // Heartbeat column additions
 const heartbeatCols = (sqlite.pragma('table_info(heartbeats)') as { name: string }[]).map(c => c.name)
 
+if (!heartbeatCols.includes('region')) {
+  sqlite.exec(`ALTER TABLE heartbeats ADD COLUMN region TEXT DEFAULT 'local'`)
+  console.log('[DB] Added region column to heartbeats')
+}
+
 if (!heartbeatCols.includes('duration_ms')) {
   sqlite.exec(`ALTER TABLE heartbeats ADD COLUMN duration_ms INTEGER`)
   // Backfill: estimate duration as (checked_at - previous checked_at) per monitor, capped at interval * 2
@@ -85,7 +90,7 @@ if (!heartbeatCols.includes('duration_ms')) {
 const monitorCols = (sqlite.pragma('table_info(monitors)') as { name: string }[]).map(c => c.name)
 
 if (!monitorCols.includes('user_id')) {
-  sqlite.exec(`ALTER TABLE monitors ADD COLUMN user_id INTEGER REFERENCES users(id)`)
+  sqlite.exec(`ALTER TABLE monitors ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL`)
   console.log('[DB] Added user_id column to monitors')
 }
 if (!monitorCols.includes('visibility')) {
@@ -93,8 +98,20 @@ if (!monitorCols.includes('visibility')) {
   console.log('[DB] Added visibility column to monitors')
 }
 if (!monitorCols.includes('regions')) {
-  sqlite.exec(`ALTER TABLE monitors ADD COLUMN regions TEXT DEFAULT '["asia"]'`)
+  sqlite.exec(`ALTER TABLE monitors ADD COLUMN regions TEXT DEFAULT '[]'`)
   console.log('[DB] Added regions column to monitors')
+}
+if (!monitorCols.includes('next_check_at')) {
+  sqlite.exec(`ALTER TABLE monitors ADD COLUMN next_check_at INTEGER`)
+  console.log('[DB] Added next_check_at column to monitors')
+}
+if (!monitorCols.includes('last_checked_at')) {
+  sqlite.exec(`ALTER TABLE monitors ADD COLUMN last_checked_at INTEGER`)
+  console.log('[DB] Added last_checked_at column to monitors')
+}
+if (!monitorCols.includes('last_status')) {
+  sqlite.exec(`ALTER TABLE monitors ADD COLUMN last_status TEXT`)
+  console.log('[DB] Added last_status column to monitors')
 }
 
 // Seed admin user (only if no users exist) ─
@@ -126,9 +143,24 @@ sqlite.exec(`
     value TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS heartbeat_summaries (
+    monitor_id   INTEGER NOT NULL REFERENCES monitors(id) ON DELETE CASCADE,
+    bucket       TEXT    NOT NULL,
+    bucket_type  TEXT    NOT NULL,
+    region       TEXT    NOT NULL DEFAULT 'local',
+    check_count  INTEGER NOT NULL,
+    up_count     INTEGER NOT NULL,
+    down_count   INTEGER NOT NULL,
+    avg_response REAL    NOT NULL,
+    PRIMARY KEY (monitor_id, bucket_type, bucket, region)
+  );
+
   CREATE INDEX IF NOT EXISTS heartbeats_monitor_checked_idx ON heartbeats (monitor_id, checked_at);
+  CREATE INDEX IF NOT EXISTS heartbeats_monitor_region_idx ON heartbeats (monitor_id, region, checked_at);
   CREATE INDEX IF NOT EXISTS monitors_user_id_idx ON monitors (user_id);
   CREATE INDEX IF NOT EXISTS monitors_visibility_idx ON monitors (visibility);
+  CREATE INDEX IF NOT EXISTS monitors_next_check_idx ON monitors (enabled, next_check_at);
+  CREATE INDEX IF NOT EXISTS idx_summaries_lookup ON heartbeat_summaries (monitor_id, bucket_type, region, bucket DESC);
 `)
 
 console.log('[DB] Tables ready')

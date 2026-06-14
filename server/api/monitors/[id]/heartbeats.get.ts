@@ -1,6 +1,7 @@
 import { db } from '../../../db/index'
 import { monitors, heartbeats } from '../../../db/schema'
 import { eq, desc, gte, and, sql, count } from 'drizzle-orm'
+// Only aggregate (region='local') heartbeats are used for stats and charts
 
 export default defineEventHandler(async (event) => {
   try {
@@ -12,7 +13,8 @@ export default defineEventHandler(async (event) => {
     if (monitor.userId !== event.context.user!.id) throw createError({ statusCode: 403, statusMessage: 'Forbidden' })
 
     const query = getQuery(event)
-    const period   = (query.period   as string) || '24h'
+    const period     = (query.period   as string) || '24h'
+    const region     = (query.region   as string) || 'local'
     const chartLimit = Math.min(500, parseInt((query.chartLimit as string) || '200', 10))
     const page     = Math.max(1,   parseInt((query.page     as string) || '1',  10))
     const pageSize = Math.min(100, Math.max(1, parseInt((query.pageSize as string) || '20', 10)))
@@ -25,7 +27,23 @@ export default defineEventHandler(async (event) => {
       default:    since = new Date(now.getTime() -      24 * 60 * 60 * 1000); break
     }
 
-    const whereClause = and(eq(heartbeats.monitorId, id), gte(heartbeats.checkedAt, since))
+    const distinctRegions = db.selectDistinct({ region: heartbeats.region })
+      .from(heartbeats)
+      .where(and(eq(heartbeats.monitorId, id), gte(heartbeats.checkedAt, since)))
+      .all()
+      .map(r => r.region)
+      .filter(Boolean)
+      .sort((a, b) => (a === 'local' ? -1 : b === 'local' ? 1 : a.localeCompare(b)))
+
+    // Append synthetic 'all' tab when there are multiple regions
+    const availableRegions = distinctRegions.length > 1
+      ? [...distinctRegions, 'all']
+      : distinctRegions
+
+    // 'all' = no region filter; otherwise filter to the selected region
+    const whereClause = region === 'all'
+      ? and(eq(heartbeats.monitorId, id), gte(heartbeats.checkedAt, since))
+      : and(eq(heartbeats.monitorId, id), gte(heartbeats.checkedAt, since), eq(heartbeats.region, region))
 
     // Chart data — sampled/limited, oldest-first for rendering
     const chartRows = db.select()
@@ -67,6 +85,7 @@ export default defineEventHandler(async (event) => {
 
     return {
       heartbeats: chartRows,
+      availableRegions,
       stats: {
         upCount:         statsRow?.upCount         ?? 0,
         downCount:       statsRow?.downCount        ?? 0,

@@ -35,10 +35,35 @@ interface PublicMonitor {
   recentHeartbeats: Heartbeat[]
 }
 
-const monitors = ref<PublicMonitor[]>([])
-const loading = ref(true)
-const error = ref<string | null>(null)
-const lastUpdated = ref<Date | null>(null)
+interface SummaryBucket {
+  bucket: string
+  checkCount: number
+  upCount: number
+  downCount: number
+  avgResponse: number
+}
+
+interface MonitorSummaryEntry {
+  monitorId: number
+  uptimePct: number | null
+  buckets: SummaryBucket[]
+}
+
+type RangeFilter = 'recent' | '30d' | '90d'
+
+const RANGE_OPTIONS: { key: RangeFilter; label: string }[] = [
+  { key: 'recent', label: 'Recent checks' },
+  { key: '30d',   label: 'Last 30 days'  },
+  { key: '90d',   label: 'Last 90 days'  },
+]
+
+const monitors       = ref<PublicMonitor[]>([])
+const loading        = ref(true)
+const error          = ref<string | null>(null)
+const lastUpdated    = ref<Date | null>(null)
+const rangeFilter    = ref<RangeFilter>('recent')
+const summaryMap     = ref<Record<number, MonitorSummaryEntry>>({})
+const summaryLoading = ref(false)
 
 async function fetchMonitors() {
   try {
@@ -52,7 +77,25 @@ async function fetchMonitors() {
   }
 }
 
-onMounted(fetchMonitors)
+async function fetchSummaries(range: '30d' | '90d') {
+  summaryLoading.value = true
+  try {
+    const data = await $fetch<MonitorSummaryEntry[]>(`/api/public/monitor-summaries?range=${range}`)
+    summaryMap.value = Object.fromEntries(data.map(d => [d.monitorId, d]))
+  } catch {
+    // summaryMap stays empty; bars show gray "no data" state
+  } finally {
+    summaryLoading.value = false
+  }
+}
+
+watch(rangeFilter, (val) => {
+  if (val !== 'recent') fetchSummaries(val)
+})
+
+onMounted(async () => {
+  await fetchMonitors()
+})
 const { pause } = useIntervalFn(fetchMonitors, 60_000)
 onUnmounted(pause)
 
@@ -70,11 +113,44 @@ const uptimeColor = (val: number | null) => {
   return 'text-red-400'
 }
 
-// Show only hostname for public URLs to avoid leaking full paths
 function displayHost(url: string) {
   try { return new URL(url).hostname }
   catch { return url }
 }
+
+// Build a synthetic Heartbeat[] from daily summary buckets for use in UptimeBar
+function summaryToHeartbeats(monitorId: number, days: number): Heartbeat[] {
+  const entry     = summaryMap.value[monitorId]
+  const bucketMap = new Map(entry?.buckets.map(b => [b.bucket, b]) ?? [])
+
+  const today = new Date()
+  today.setUTCHours(0, 0, 0, 0)
+
+  return Array.from({ length: days }, (_, i) => {
+    const d       = new Date(today.getTime() - (days - 1 - i) * 86_400_000)
+    const dateStr = d.toISOString().slice(0, 10)
+    const bucket  = bucketMap.get(dateStr)
+
+    if (!bucket || bucket.checkCount === 0) {
+      return { id: 0, monitorId, status: 'pending' as const, responseTimeMs: null, checkedAt: dateStr, message: null }
+    }
+
+    const upPct  = bucket.upCount / bucket.checkCount
+    const status = upPct >= 0.95 ? 'up' : 'down' as 'up' | 'down'
+    return {
+      id: 0, monitorId, status,
+      responseTimeMs: Math.round(bucket.avgResponse),
+      checkedAt:      dateStr,
+      message:        `${bucket.upCount}/${bucket.checkCount} checks up`,
+    }
+  })
+}
+
+function getSummaryUptime(monitorId: number): number | null {
+  return summaryMap.value[monitorId]?.uptimePct ?? null
+}
+
+const rangeDays = computed(() => rangeFilter.value === '90d' ? 90 : 30)
 </script>
 
 <template>
@@ -158,52 +234,93 @@ function displayHost(url: string) {
           <p class="text-sm text-muted-foreground">No public monitors configured</p>
         </div>
 
-        <!-- Monitor list -->
-        <div v-else class="space-y-3">
-          <Card
-            v-for="monitor in monitors"
-            :key="monitor.id"
-            class="p-4"
-          >
-            <!-- Top row -->
-            <div class="flex items-start gap-3">
-              <div class="pt-0.5 shrink-0">
-                <StatusBadge :status="monitor.latestHeartbeat?.status ?? 'pending'" :show-label="false" size="lg" />
-              </div>
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-2 flex-wrap">
-                  <span class="font-semibold text-foreground">{{ monitor.name }}</span>
-                  <StatusBadge :status="monitor.latestHeartbeat?.status ?? 'pending'" size="sm" :show-label="true" />
+        <template v-else>
+          <!-- Range filter -->
+          <div class="flex items-center gap-1 bg-card border border-border rounded-lg p-1 w-fit">
+            <button
+              v-for="opt in RANGE_OPTIONS"
+              :key="opt.key"
+              :class="[
+                'px-3 py-1 text-xs rounded-md font-medium transition-colors',
+                rangeFilter === opt.key
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
+              ]"
+              @click="rangeFilter = opt.key"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
+
+          <!-- Monitor list -->
+          <div class="space-y-3">
+            <Card
+              v-for="monitor in monitors"
+              :key="monitor.id"
+              class="p-4"
+            >
+              <!-- Top row -->
+              <div class="flex items-start gap-3">
+                <div class="pt-0.5 shrink-0">
+                  <StatusBadge :status="monitor.latestHeartbeat?.status ?? 'pending'" :show-label="false" size="lg" />
                 </div>
-                <p class="text-xs text-muted-foreground font-mono mt-0.5">{{ displayHost(monitor.url) }}</p>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="font-semibold text-foreground">{{ monitor.name }}</span>
+                    <StatusBadge :status="monitor.latestHeartbeat?.status ?? 'pending'" size="sm" :show-label="true" />
+                  </div>
+                  <p class="text-xs text-muted-foreground font-mono mt-0.5">{{ displayHost(monitor.url) }}</p>
+                </div>
+                <div class="shrink-0 text-right">
+                  <p class="text-sm font-semibold text-foreground tabular-nums">
+                    {{ formatResponseTime(monitor.latestHeartbeat?.responseTimeMs) }}
+                  </p>
+                  <p class="text-[10px] text-muted-foreground mt-0.5">response</p>
+                </div>
               </div>
-              <div class="shrink-0 text-right">
-                <p class="text-sm font-semibold text-foreground tabular-nums">
-                  {{ formatResponseTime(monitor.latestHeartbeat?.responseTimeMs) }}
-                </p>
-                <p class="text-[10px] text-muted-foreground mt-0.5">response</p>
+
+              <!-- Uptime bar -->
+              <div class="mt-3 relative">
+                <div v-if="rangeFilter !== 'recent' && summaryLoading" class="absolute inset-0 flex items-center justify-center bg-background/50 rounded z-10">
+                  <span class="text-[10px] text-muted-foreground">Loading…</span>
+                </div>
+                <UptimeBar
+                  v-if="rangeFilter === 'recent'"
+                  :heartbeats="monitor.recentHeartbeats"
+                  :blocks="90"
+                />
+                <UptimeBar
+                  v-else
+                  :heartbeats="summaryToHeartbeats(monitor.id, rangeDays)"
+                  :blocks="rangeDays"
+                />
               </div>
-            </div>
 
-            <!-- Uptime bar -->
-            <div class="mt-3">
-              <UptimeBar :heartbeats="monitor.recentHeartbeats" :blocks="90" />
-            </div>
-
-            <!-- Uptime stats -->
-            <div class="flex items-center gap-4 mt-2.5 text-xs text-muted-foreground">
-              <span>
-                24h: <span :class="['font-medium tabular-nums', uptimeColor(monitor.uptime24h)]">{{ formatUptime(monitor.uptime24h) }}</span>
-              </span>
-              <span>
-                7d: <span :class="['font-medium tabular-nums', uptimeColor(monitor.uptime7d)]">{{ formatUptime(monitor.uptime7d) }}</span>
-              </span>
-              <span>
-                30d: <span :class="['font-medium tabular-nums', uptimeColor(monitor.uptime30d)]">{{ formatUptime(monitor.uptime30d) }}</span>
-              </span>
-            </div>
-          </Card>
-        </div>
+              <!-- Uptime stats -->
+              <div class="flex items-center gap-4 mt-2.5 text-xs text-muted-foreground">
+                <template v-if="rangeFilter === 'recent'">
+                  <span>
+                    24h: <span :class="['font-medium tabular-nums', uptimeColor(monitor.uptime24h)]">{{ formatUptime(monitor.uptime24h) }}</span>
+                  </span>
+                  <span>
+                    7d: <span :class="['font-medium tabular-nums', uptimeColor(monitor.uptime7d)]">{{ formatUptime(monitor.uptime7d) }}</span>
+                  </span>
+                  <span>
+                    30d: <span :class="['font-medium tabular-nums', uptimeColor(monitor.uptime30d)]">{{ formatUptime(monitor.uptime30d) }}</span>
+                  </span>
+                </template>
+                <template v-else>
+                  <span>
+                    {{ rangeFilter === '30d' ? '30d' : '90d' }} uptime:
+                    <span :class="['font-medium tabular-nums', uptimeColor(getSummaryUptime(monitor.id))]">
+                      {{ formatUptime(getSummaryUptime(monitor.id)) }}
+                    </span>
+                  </span>
+                </template>
+              </div>
+            </Card>
+          </div>
+        </template>
       </template>
     </main>
 

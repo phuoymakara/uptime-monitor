@@ -1,8 +1,8 @@
 export function parseRegions(raw: string | null | undefined): string[] {
   try {
-    const parsed = JSON.parse(raw || '["asia"]')
-    return Array.isArray(parsed) ? parsed : ['asia']
+    const parsed = JSON.parse(raw || '[]')
+    return Array.isArray(parsed) ? parsed : []
   } catch {
-    return ['asia']
+    return []
   }
 }

@@ -6,7 +6,11 @@ import {
   Eye,
   EyeOff,
   Loader2,
+  Plus,
+  RefreshCw,
   Send,
+  Server,
+  Trash2,
   XCircle,
   Zap,
 } from 'lucide-vue-next'
@@ -20,6 +24,66 @@ useSeoMeta({
   ogDescription: 'Configure monitoring intervals, notification webhooks, and data management options.',
   robots: 'noindex, nofollow',
 })
+
+interface Agent {
+  id: string
+  name: string
+  region: string
+  url: string
+  token: string
+}
+
+const agents = ref<Agent[]>([])
+const agentForm = ref({ name: '', region: 'asia-singapore', url: '', token: '' })
+const addingAgent = ref(false)
+const showAddAgent = ref(false)
+const agentTestResults = ref<Record<string, { ok: boolean; message: string; loading: boolean }>>({})
+
+async function fetchAgents() {
+  try { agents.value = await $fetch<Agent[]>('/api/agents') } catch {}
+}
+
+async function addAgent() {
+  addingAgent.value = true
+  try {
+    agents.value = await $fetch<Agent[]>('/api/agents', {
+      method: 'POST',
+      body: agentForm.value,
+    })
+    agentForm.value = { name: '', region: 'asia-singapore', url: '', token: '' }
+    showAddAgent.value = false
+  } finally {
+    addingAgent.value = false
+  }
+}
+
+async function removeAgent(id: string) {
+  agents.value = await $fetch<Agent[]>(`/api/agents/${id}`, { method: 'DELETE' })
+}
+
+async function testAgent(id: string) {
+  agentTestResults.value[id] = { ok: false, message: '', loading: true }
+  try {
+    const res = await $fetch<{ ok: boolean; region?: string; version?: string; message?: string }>(
+      `/api/agents/${id}/test`, { method: 'POST' }
+    )
+    agentTestResults.value[id] = {
+      ok: res.ok,
+      message: res.ok ? `Connected · region: ${res.region}, v${res.version}` : (res.message ?? 'Failed'),
+      loading: false,
+    }
+  } catch (err: any) {
+    agentTestResults.value[id] = { ok: false, message: err?.data?.message ?? 'Unreachable', loading: false }
+  }
+}
+
+const someAgentLoading = computed(() =>
+  agents.value.some(a => agentTestResults.value[a.id]?.loading)
+)
+
+function testAllAgents() {
+  agents.value.forEach(a => testAgent(a.id))
+}
 
 interface AppSettings {
   defaultIntervalSeconds: number
@@ -65,6 +129,8 @@ onMounted(async () => {
     const data = await $fetch<AppSettings>('/api/settings')
     settings.value = data
   } catch {}
+  await fetchAgents()
+  testAllAgents()
 })
 
 async function saveSettings() {
@@ -262,6 +328,108 @@ const isConfigured = computed(() => {
           No repeated alerts while the status stays the same.
         </p>
       </div>
+    </Card>
+
+    <!-- Agents -->
+    <Card class="overflow-hidden">
+      <div class="flex items-center justify-between px-5 py-3.5 border-b border-border">
+        <div class="flex items-center gap-2">
+          <Server class="size-4 text-muted-foreground" />
+          <h2 class="text-sm font-semibold text-foreground">Region Agents</h2>
+        </div>
+        <div class="flex items-center gap-2">
+          <Button v-if="agents.length" variant="ghost" size="sm" class="gap-1.5 h-7 text-xs text-muted-foreground" :disabled="someAgentLoading" @click="testAllAgents">
+            <RefreshCw class="size-3.5" :class="{ 'animate-spin': someAgentLoading }" />
+            Refresh
+          </Button>
+          <Button variant="outline" size="sm" class="gap-1.5 h-7 text-xs" @click="showAddAgent = !showAddAgent">
+            <Plus class="size-3.5" />Add Agent
+          </Button>
+        </div>
+      </div>
+
+      <!-- Add form -->
+      <div v-if="showAddAgent" class="p-5 border-b border-border space-y-3 bg-muted/20">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="space-y-1.5">
+            <Label>Name</Label>
+            <Input v-model="agentForm.name" placeholder="Singapore VPS" class="text-sm" />
+          </div>
+          <div class="space-y-1.5">
+            <Label>Region</Label>
+            <Select v-model="agentForm.region" :options="REGION_SELECT_OPTIONS" searchable search-placeholder="Search country…" class="w-full" />
+          </div>
+          <div class="space-y-1.5">
+            <Label>Agent URL</Label>
+            <Input v-model="agentForm.url" placeholder="https://agent.yourdomain.com" class="text-sm font-mono" />
+          </div>
+          <div class="space-y-1.5">
+            <Label>Token</Label>
+            <Input v-model="agentForm.token" type="password" placeholder="your-secret-token" class="text-sm font-mono" />
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <Button size="sm" :disabled="addingAgent || !agentForm.name || !agentForm.url || !agentForm.token" class="gap-1.5" @click="addAgent">
+            <Loader2 v-if="addingAgent" class="size-3.5 animate-spin" />
+            <Plus v-else class="size-3.5" />
+            Add
+          </Button>
+          <Button variant="ghost" size="sm" @click="showAddAgent = false">Cancel</Button>
+        </div>
+      </div>
+
+      <!-- Agent list -->
+      <div v-if="agents.length" class="divide-y divide-border/50">
+        <div v-for="agent in agents" :key="agent.id" class="flex items-center justify-between px-5 py-3 gap-4">
+          <div class="min-w-0 flex items-start gap-2.5">
+            <!-- Status dot -->
+            <div
+              class="mt-1.5 size-2 rounded-full shrink-0 transition-colors"
+              :class="
+                !agentTestResults[agent.id]         ? 'bg-muted-foreground/30' :
+                agentTestResults[agent.id].loading   ? 'bg-muted-foreground/40 animate-pulse' :
+                agentTestResults[agent.id].ok        ? 'bg-green-500' : 'bg-red-500'
+              "
+            />
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-sm font-medium text-foreground">{{ agent.name }}</span>
+                <Badge variant="outline" class="text-[10px] font-mono">{{ formatRegionLabel(agent.region) }}</Badge>
+              </div>
+              <p
+                v-if="agentTestResults[agent.id] && !agentTestResults[agent.id].loading"
+                class="text-xs mt-0.5"
+                :class="agentTestResults[agent.id].ok ? 'text-muted-foreground' : 'text-red-400'"
+              >
+                {{ agentTestResults[agent.id].message }}
+              </p>
+            </div>
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            <Button
+              variant="ghost" size="sm"
+              class="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+              :disabled="agentTestResults[agent.id]?.loading"
+              :title="`Refresh ${agent.name}`"
+              @click="testAgent(agent.id)"
+            >
+              <Loader2 v-if="agentTestResults[agent.id]?.loading" class="size-3.5 animate-spin" />
+              <RefreshCw v-else class="size-3.5" />
+            </Button>
+            <Button
+              variant="ghost" size="sm"
+              class="h-7 w-7 p-0 text-muted-foreground hover:text-red-400"
+              :title="`Delete ${agent.name}`"
+              @click="removeAgent(agent.id)"
+            >
+              <Trash2 class="size-3.5" />
+            </Button>
+          </div>
+        </div>
+      </div>
+      <p v-else-if="!showAddAgent" class="px-5 py-4 text-sm text-muted-foreground">
+        No agents configured. Add one to enable multi-region monitoring.
+      </p>
     </Card>
 
     <!-- Data Management -->
