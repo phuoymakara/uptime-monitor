@@ -1,7 +1,7 @@
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, real, index, primaryKey } from 'drizzle-orm/sqlite-core'
 import { relations } from 'drizzle-orm'
 
-// Users 
+// Users
 
 export const users = sqliteTable('users', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -10,7 +10,7 @@ export const users = sqliteTable('users', {
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 })
 
-// Sessions 
+// Sessions
 
 export const sessions = sqliteTable('sessions', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -20,7 +20,7 @@ export const sessions = sqliteTable('sessions', {
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 })
 
-// Monitors 
+// Monitors
 
 export const monitors = sqliteTable('monitors', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -31,7 +31,7 @@ export const monitors = sqliteTable('monitors', {
   timeoutSeconds: integer('timeout_seconds').notNull().default(30),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   visibility: text('visibility', { enum: ['public', 'private'] }).notNull().default('public'),
-  regions: text('regions').default('["asia"]'),
+  regions: text('regions').default('[]'),
   userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
@@ -45,7 +45,7 @@ export const monitors = sqliteTable('monitors', {
   nextCheckIdx: index('monitors_next_check_idx').on(t.enabled, t.nextCheckAt),
 }))
 
-// Heartbeats 
+// Heartbeats
 
 export const heartbeats = sqliteTable('heartbeats', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -66,6 +66,29 @@ export const heartbeats = sqliteTable('heartbeats', {
   monitorRegionIdx: index('heartbeats_monitor_region_idx').on(t.monitorId, t.region, t.checkedAt),
 }))
 
+// Heartbeat Summaries (tiered rollup for long-term history)
+
+export const heartbeatSummaries = sqliteTable('heartbeat_summaries', {
+  monitorId:   integer('monitor_id').notNull().references(() => monitors.id, { onDelete: 'cascade' }),
+  bucket:      text('bucket').notNull(),
+  bucketType:  text('bucket_type').notNull().$type<'hour' | 'day' | 'month'>(),
+  region:      text('region').notNull().default('local'),
+  checkCount:  integer('check_count').notNull(),
+  upCount:     integer('up_count').notNull(),
+  downCount:   integer('down_count').notNull(),
+  avgResponse: real('avg_response').notNull(),
+}, (t) => ({
+  pk:        primaryKey({ columns: [t.monitorId, t.bucketType, t.bucket, t.region] }),
+  lookupIdx: index('idx_summaries_lookup').on(t.monitorId, t.bucketType, t.region, t.bucket),
+}))
+
+// Settings
+
+export const settings = sqliteTable('settings', {
+  key:   text('key').primaryKey().notNull(),
+  value: text('value').notNull(),
+})
+
 // Relations ─
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -80,18 +103,16 @@ export const sessionsRelations = relations(sessions, ({ one }) => ({
 export const monitorsRelations = relations(monitors, ({ one, many }) => ({
   user: one(users, { fields: [monitors.userId], references: [users.id] }),
   heartbeats: many(heartbeats),
+  heartbeatSummaries: many(heartbeatSummaries),
 }))
 
 export const heartbeatsRelations = relations(heartbeats, ({ one }) => ({
   monitor: one(monitors, { fields: [heartbeats.monitorId], references: [monitors.id] }),
 }))
 
-// Settings
-
-export const settings = sqliteTable('settings', {
-  key:   text('key').primaryKey().notNull(),
-  value: text('value').notNull(),
-})
+export const heartbeatSummariesRelations = relations(heartbeatSummaries, ({ one }) => ({
+  monitor: one(monitors, { fields: [heartbeatSummaries.monitorId], references: [monitors.id] }),
+}))
 
 // Types
 
@@ -103,3 +124,5 @@ export type Monitor = typeof monitors.$inferSelect
 export type NewMonitor = typeof monitors.$inferInsert
 export type Heartbeat = typeof heartbeats.$inferSelect
 export type NewHeartbeat = typeof heartbeats.$inferInsert
+export type HeartbeatSummary = typeof heartbeatSummaries.$inferSelect
+export type NewHeartbeatSummary = typeof heartbeatSummaries.$inferInsert

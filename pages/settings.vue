@@ -33,15 +33,8 @@ interface Agent {
   token: string
 }
 
-const REGIONS = [
-  { label: 'Asia (Singapore)', value: 'asia' },
-  { label: 'Europe (Germany)', value: 'europe' },
-  { label: 'North America (US)', value: 'north-america' },
-  { label: 'Australia (Sydney)', value: 'australia' },
-]
-
 const agents = ref<Agent[]>([])
-const agentForm = ref({ name: '', region: 'asia', url: '', token: '' })
+const agentForm = ref({ name: '', region: 'asia-singapore', url: '', token: '' })
 const addingAgent = ref(false)
 const showAddAgent = ref(false)
 const agentTestResults = ref<Record<string, { ok: boolean; message: string; loading: boolean }>>({})
@@ -57,7 +50,7 @@ async function addAgent() {
       method: 'POST',
       body: agentForm.value,
     })
-    agentForm.value = { name: '', region: 'asia', url: '', token: '' }
+    agentForm.value = { name: '', region: 'asia-singapore', url: '', token: '' }
     showAddAgent.value = false
   } finally {
     addingAgent.value = false
@@ -364,7 +357,7 @@ const isConfigured = computed(() => {
           </div>
           <div class="space-y-1.5">
             <Label>Region</Label>
-            <Select v-model="agentForm.region" :options="REGIONS" class="w-full" />
+            <Select v-model="agentForm.region" :options="REGION_SELECT_OPTIONS" searchable search-placeholder="Search country…" class="w-full" />
           </div>
           <div class="space-y-1.5">
             <Label>Agent URL</Label>
@@ -401,7 +394,7 @@ const isConfigured = computed(() => {
             <div class="min-w-0">
               <div class="flex items-center gap-2 flex-wrap">
                 <span class="text-sm font-medium text-foreground">{{ agent.name }}</span>
-                <Badge variant="outline" class="text-[10px] font-mono uppercase">{{ agent?.region }}</Badge>
+                <Badge variant="outline" class="text-[10px] font-mono">{{ formatRegionLabel(agent.region) }}</Badge>
               </div>
               <p
                 v-if="agentTestResults[agent.id] && !agentTestResults[agent.id].loading"
