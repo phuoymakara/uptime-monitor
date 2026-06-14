@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
       default:    since = new Date(now.getTime() -      24 * 60 * 60 * 1000); break
     }
 
-    const availableRegions = db.selectDistinct({ region: heartbeats.region })
+    const distinctRegions = db.selectDistinct({ region: heartbeats.region })
       .from(heartbeats)
       .where(and(eq(heartbeats.monitorId, id), gte(heartbeats.checkedAt, since)))
       .all()
@@ -35,7 +35,15 @@ export default defineEventHandler(async (event) => {
       .filter(Boolean)
       .sort((a, b) => (a === 'local' ? -1 : b === 'local' ? 1 : a.localeCompare(b)))
 
-    const whereClause = and(eq(heartbeats.monitorId, id), gte(heartbeats.checkedAt, since), eq(heartbeats.region, region))
+    // Append synthetic 'all' tab when there are multiple regions
+    const availableRegions = distinctRegions.length > 1
+      ? [...distinctRegions, 'all']
+      : distinctRegions
+
+    // 'all' = no region filter; otherwise filter to the selected region
+    const whereClause = region === 'all'
+      ? and(eq(heartbeats.monitorId, id), gte(heartbeats.checkedAt, since))
+      : and(eq(heartbeats.monitorId, id), gte(heartbeats.checkedAt, since), eq(heartbeats.region, region))
 
     // Chart data — sampled/limited, oldest-first for rendering
     const chartRows = db.select()

@@ -6,6 +6,7 @@ import { readSettings } from '../utils/settings'
 import { sendNotification } from '../utils/notify'
 import { readAgents, checkViaAgents, majorityStatus } from '../utils/agents'
 import { parseRegions } from '../utils/regions'
+import { runNightlyRollup } from '../utils/heartbeats'
 
 const HEARTBEAT_LIMIT = parseInt(process.env.HEARTBEAT_LIMIT || '10000', 10)
 const TICK_MS = parseInt(process.env.TICK_MS || '5000', 10)
@@ -126,7 +127,11 @@ async function runCheck(m: ClaimedMonitor) {
         overallResponseTimeMs = Math.round(
           regionResults.reduce((s, r) => s + r.responseTimeMs, 0) / regionResults.length
         )
-        overallMessage = regionResults.map(r => `${r.region}:${r.status}`).join(' ')
+        const upRegions   = regionResults.filter(r => r.status === 'up').map(r => r.region)
+        const downRegions = regionResults.filter(r => r.status === 'down').map(r => r.region)
+        overallMessage = downRegions.length === 0
+          ? `All ${regionResults.length} regions up`
+          : `${upRegions.length}/${regionResults.length} regions up · down: ${downRegions.join(', ')}`
       }
     } else {
       const result = await performCheck(m.type, m.url, m.timeout_seconds)
@@ -260,4 +265,8 @@ export default defineNitroPlugin(() => {
       console.error('[DB] WAL checkpoint failed:', err)
     }
   }, 60 * 60 * 1000)
+
+  // Heartbeat summary rollup — run on startup (catch-up) then every 24 h
+  setTimeout(() => runNightlyRollup(), 10_000)
+  setInterval(() => runNightlyRollup(), 24 * 60 * 60 * 1000)
 })

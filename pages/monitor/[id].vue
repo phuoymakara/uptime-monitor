@@ -69,8 +69,6 @@ const recentPage = ref(1)
 const recentPageSize = ref(20)
 const PAGE_SIZE_OPTIONS = [20, 50, 100] as const
 
-const formatRegionLabel = (r: string) =>
-  r === 'local' ? 'All Regions' : r.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 
 async function fetchDetail() {
   try { monitor.value = await $fetch<MonitorDetail>(`/api/monitors/${monitorId.value}`) }
@@ -393,7 +391,7 @@ const uptimeColor = (val: number | null) => {
             <thead>
               <tr class="border-b border-border bg-muted/20">
                 <th class="text-left font-medium text-muted-foreground px-4 py-2.5">Status</th>
-                <th v-if="heartbeatData.availableRegions.length > 1" class="text-left font-medium text-muted-foreground px-4 py-2.5">Region</th>
+                <th v-if="heartbeatData.availableRegions.length > 1 || selectedRegion === 'all'" class="text-left font-medium text-muted-foreground px-4 py-2.5">Region</th>
                 <th class="text-left font-medium text-muted-foreground px-4 py-2.5">Response</th>
                 <th class="text-left font-medium text-muted-foreground px-4 py-2.5">Checked At</th>
                 <th class="text-left font-medium text-muted-foreground px-4 py-2.5">Message</th>
@@ -408,7 +406,7 @@ const uptimeColor = (val: number | null) => {
                 <td class="px-4 py-2.5">
                   <StatusBadge :status="hb.status" size="sm" />
                 </td>
-                <td v-if="heartbeatData.availableRegions.length > 1" class="px-4 py-2.5">
+                <td v-if="heartbeatData.availableRegions.length > 1 || selectedRegion === 'all'" class="px-4 py-2.5">
                   <span class="font-mono text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
                     {{ formatRegionLabel(hb.region ?? 'local') }}
                   </span>

@@ -98,7 +98,7 @@ if (!monitorCols.includes('visibility')) {
   console.log('[DB] Added visibility column to monitors')
 }
 if (!monitorCols.includes('regions')) {
-  sqlite.exec(`ALTER TABLE monitors ADD COLUMN regions TEXT DEFAULT '["asia"]'`)
+  sqlite.exec(`ALTER TABLE monitors ADD COLUMN regions TEXT DEFAULT '[]'`)
   console.log('[DB] Added regions column to monitors')
 }
 if (!monitorCols.includes('next_check_at')) {
@@ -143,11 +143,24 @@ sqlite.exec(`
     value TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS heartbeat_summaries (
+    monitor_id   INTEGER NOT NULL REFERENCES monitors(id) ON DELETE CASCADE,
+    bucket       TEXT    NOT NULL,
+    bucket_type  TEXT    NOT NULL,
+    region       TEXT    NOT NULL DEFAULT 'local',
+    check_count  INTEGER NOT NULL,
+    up_count     INTEGER NOT NULL,
+    down_count   INTEGER NOT NULL,
+    avg_response REAL    NOT NULL,
+    PRIMARY KEY (monitor_id, bucket_type, bucket, region)
+  );
+
   CREATE INDEX IF NOT EXISTS heartbeats_monitor_checked_idx ON heartbeats (monitor_id, checked_at);
   CREATE INDEX IF NOT EXISTS heartbeats_monitor_region_idx ON heartbeats (monitor_id, region, checked_at);
   CREATE INDEX IF NOT EXISTS monitors_user_id_idx ON monitors (user_id);
   CREATE INDEX IF NOT EXISTS monitors_visibility_idx ON monitors (visibility);
   CREATE INDEX IF NOT EXISTS monitors_next_check_idx ON monitors (enabled, next_check_at);
+  CREATE INDEX IF NOT EXISTS idx_summaries_lookup ON heartbeat_summaries (monitor_id, bucket_type, region, bucket DESC);
 `)
 
 console.log('[DB] Tables ready')

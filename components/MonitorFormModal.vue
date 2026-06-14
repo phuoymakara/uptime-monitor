@@ -28,11 +28,8 @@ onMounted(async () => {
 
 function toggleRegion(region: string) {
   const idx = form.value.regions.indexOf(region)
-  if (idx === -1) {
-    form.value.regions.push(region)
-  } else if (form.value.regions.length > 1) {
-    form.value.regions.splice(idx, 1)
-  }
+  if (idx === -1) form.value.regions.push(region)
+  else            form.value.regions.splice(idx, 1)
 }
 
 const defaultForm = {
@@ -43,7 +40,7 @@ const defaultForm = {
   timeoutSeconds: 5,
   enabled: true,
   visibility: 'public' as 'public' | 'private',
-  regions: ['asia'] as string[],
+  regions: [] as string[],
 }
 
 const form = ref({ ...defaultForm })
@@ -64,7 +61,7 @@ watch(
         timeoutSeconds: props.monitor.timeoutSeconds,
         enabled: props.monitor.enabled,
         visibility: props.monitor.visibility ?? 'public',
-        regions: props.monitor.regions?.length ? [...props.monitor.regions] : ['north-america'],
+        regions: props.monitor.regions?.length ? [...props.monitor.regions] : [],
       }
     } else {
       form.value = { ...defaultForm }
@@ -222,15 +219,15 @@ async function handleSubmit() {
             :key="region"
             type="button"
             :class="[
-              'px-3 py-1.5 rounded-md text-xs font-medium border transition-colors capitalize',
+              'px-3 py-1.5 rounded-md text-xs font-medium border transition-colors',
               form.regions.includes(region)
                 ? 'bg-primary/10 border-primary/50 text-primary'
                 : 'border-input text-muted-foreground hover:border-border hover:text-foreground',
             ]"
             @click="toggleRegion(region)"
-          >{{ region }}</button>
+          >{{ formatRegionLabel(region) }}</button>
         </div>
-        <p class="text-xs text-muted-foreground">Select at least one region. Majority vote determines up/down status.</p>
+        <p class="text-xs text-muted-foreground">Select regions to run multi-region checks. Leave all unselected for local-only check.</p>
       </div>
 
       <!-- Enable toggle -->
