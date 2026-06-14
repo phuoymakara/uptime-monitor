@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "nuxt dev",
     "build": "nuxt build",
-    "start": "nuxt start -p 4003",
+    "start": "nuxt start -p 4004",
     "pm2:start": "pm2 start ecosystem.config.js",
     "pm2:restart": "pm2 restart ecosystem.config.js",
     "build:safe": "node scripts/backup-db.mjs && yarn db:migrate && nuxt build",
